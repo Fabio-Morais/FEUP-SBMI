@@ -3,13 +3,19 @@
  *  Created on: 06/10/2018 (eclipse, avr-gcc)
  *      Author: up201504257@fe.up.pt
  *
- *      Estado 1-> LUZ VERDE NORTE
- *      Estado 2-> LUZ AMARELA NORTE
- *      Estado 3-> LUZ VERMELHA NORTE
- *      Estado 4-> LUZ VERDE SUL
- *      Estado 5-> LUZ AMARELA SUL
- *      Estado 6-> LUZ VERMELHA SUL
+ *      Estado 1-> LUZ VERDE NORTE, LUZ VERMELHA SUL
+ *      Estado 2-> LUZ AMARELA NORTE, LUZ VERMELHA SUL
+ *      Estado 3-> LUZ VERMELHA NORTE, LUZ VERMELHA SUL
+ *      Estado 4-> LUZ VERDE SUL, LUZ VERMELHA NORTE
+ *      Estado 5-> LUZ AMARELA SUL, LUZ VERMELHA NORTE
+ *      Estado 6-> LUZ VERMELHA SUL, LUZ VERMELHA NORTE
  *
+ *
+ *	Solução: Decrementar duas variaveis a cada 10ms, uma variavel para o LED verde e outra variavel para o
+ *			 LED amarelo e vermelho, pois para estes 2 o tempo é o mesmo.
+ *******************************************
+ *	A melhor combinação de COUNT que achamos foi:
+ *	CP=1, TP=256, COUNT=625
  *******************************************/
 
 #include <avr/io.h>
@@ -39,10 +45,9 @@
 #define AMARELO 2
 #define VERMELHO 3
 
-/*Tempos em s*/
-#define TEMPO_VERDE 1
-#define TEMPO_AMARELO 1
-#define TEMPO_VERMELHO 1
+/*Tempos para o timer*/
+#define TEMPO_VERDE 100
+#define TEMPO_AMARELO_VERMELHO 100
 
 /*Tempos suplentes*/
 #define SHORT 200
@@ -50,24 +55,16 @@
 
 uint8_t estado;
 volatile uint8_t flag;
-
-/* Caso o valor seja -1, então quer dizer que o tempo está desligado
- * Caso o valor seja 0, então quer dizer que o tempo acabou
- * Caso o valor seja >0, então quer dizer que o tempo ainda está a contar*/
-volatile int16_t T_Amarelo, T_Vermelho, T_Emergencia;
-volatile int32_t T_Verde;
+volatile uint16_t T_Verde, T_Amarelo_Vermelho, T_Emergencia;
 
 /*Faz inicialiazação do Timer 1*/
-void Init_Time();
+void Init_Time(void);
 
 /* Iniciação das variaveis e timers */
 void hw_init(void);
 
-/*Dá START no timer*/
-void Start_Time(uint8_t Time_s, uint8_t escolha);
-
-/*Dá Stop no timer (coloca -1 na variavel)*/
-void Stop_Timer(uint8_t escolha);
+/*Dá START no timer escolhido */
+void Start_Time(uint8_t Time, uint8_t escolha);
 
 /* Transições entre estados*/
 void Estados(void);
@@ -92,14 +89,12 @@ ISR(TIMER1_OVF_vect) {
 	/*Reload TC1*/
 	TCNT1 = T1BOTTOM;
 
-	if (T_Verde > 0)
+	/*É possivel decrementar varios timers ao mesmo tempo assim*/
+	if (T_Verde)
 		T_Verde--;
 
-	if (T_Amarelo > 0)
-		T_Amarelo--;
-
-	if (T_Vermelho > 0)
-		T_Vermelho--;
+	if (T_Amarelo_Vermelho)
+		T_Amarelo_Vermelho--;
 
 }
 
@@ -114,7 +109,7 @@ int main(void) {
 
 }
 
-void Init_Time() {
+void Init_Time(void) {
 	TCCR1B = 0; 					   //Stop Tcc1
 	TIFR1 = (7 << TOV1) | (1 << ICF1); //Clear all pending interrupts
 	TCCR1A = 0; 					   //NORMAL mode
@@ -148,11 +143,6 @@ void hw_init(void) {
 	Init_Time();
 	sei();
 
-	/*Desliga os tempos todos*/
-	Stop_Timer(VERDE);
-	Stop_Timer(AMARELO);
-	Stop_Timer(VERMELHO);
-
 	/*Testa LEDS*/
 	Testa_Leds();
 
@@ -161,26 +151,20 @@ void hw_init(void) {
 
 }
 
-void Start_Time(uint8_t Time_s, uint8_t escolha) {
+void Start_Time(uint8_t Time, uint8_t escolha) {
 
-	/*É preciso converter Time_s
-	 * Ex: 5s -> 500 ciclos de 10ms*/
 	switch (escolha) {
 	case VERDE:
-		T_Verde = Time_s;
-		T_Verde *= 100;
+		T_Verde = Time;
 		break;
 	case AMARELO:
-		T_Amarelo = Time_s;
-		T_Amarelo *= 100;
+		T_Amarelo_Vermelho = Time;
 		break;
 	case VERMELHO:
-		T_Vermelho = Time_s;
-		T_Vermelho *= 100;
+		T_Amarelo_Vermelho = Time;
 		break;
 	case 4:
-		T_Emergencia = Time_s;
-		T_Emergencia *= 100;
+		T_Emergencia = Time;
 		break;
 	default:
 		Erro();
@@ -188,74 +172,50 @@ void Start_Time(uint8_t Time_s, uint8_t escolha) {
 	}
 }
 
-void Stop_Timer(uint8_t escolha) {
-	switch (escolha) {
-	case VERDE:
-		T_Verde = -1;
-		break;
-	case AMARELO:
-		T_Amarelo = -1;
-		break;
-	case VERMELHO:
-		T_Vermelho = -1;
-		break;
-	case 4:
-		T_Emergencia = -1;
-		break;
-	default:
-		Erro();
-		break;
-	}
-
-}
 void Estados(void) {
 
 	if (estado == 1 && !T_Verde) // tempo do verde N
 			{
 		estado = 2; /*Luz amarela N*/
-		Stop_Timer(VERDE);
-		Start_Time(TEMPO_AMARELO, AMARELO);
+		Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
 
-	} else if (estado == 2 && !T_Amarelo) // tempo do amarelo N
+	} else if (estado == 2 && !T_Amarelo_Vermelho) // tempo do amarelo N
 			{
 		estado = 3; /*Luz vermelha N*/
-		Stop_Timer(AMARELO);
-		Start_Time(TEMPO_VERMELHO, VERMELHO);
+		Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
 
-	} else if (estado == 3 && !T_Vermelho) // tempo do vermelho N
+	} else if (estado == 3 && !T_Amarelo_Vermelho) // tempo do vermelho N
 			{
 		estado = 4; /*Luz verde E*/
-		Stop_Timer(VERMELHO);
 		Start_Time(TEMPO_VERDE, VERDE);
 
 	} else if (estado == 4 && !T_Verde) // tempo do verde E
 			{
 		estado = 5; /*Luz amarela E*/
-		Stop_Timer(VERDE);
-		Start_Time(TEMPO_AMARELO, AMARELO);
-	} else if (estado == 5 && !T_Amarelo) // tempo do amarelo E
+		Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
+	} else if (estado == 5 && !T_Amarelo_Vermelho) // tempo do amarelo E
 			{
 		estado = 6; /*Luz vermelha E*/
-		Stop_Timer(AMARELO);
-		Start_Time(TEMPO_VERMELHO, VERMELHO);
-	} else if (estado == 6 && !T_Vermelho) // tempo do vermelho E
+		Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
+	} else if (estado == 6 && !T_Amarelo_Vermelho) // tempo do vermelho E
 			{
 		estado = 1; /* VERDE N*/
-		Stop_Timer(VERMELHO);
 		Start_Time(TEMPO_VERDE, VERDE);
 	}
 
 	/* flag==1 Ocorreu interrupçao do botão
-	 * flag==2 lado NORTE
-	 * flag==3 lado SUL
+	 * flag==2 ocorreu no lado NORTE
+	 * flag==3 ocorreu no lado SUL
 	 * */
 	if (flag == 1) {
+
 		/*Se tiver no Verde Norte*/
 		if (estado == 1) {
 			estado = 2;
-			Start_Time(TEMPO_AMARELO, AMARELO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
 			flag = 2;
 		}
+
 		/*Se tiver no Amarelo ou Vermelho Norte*/
 		else if (estado == 2 || estado == 3)
 			flag = 2;
@@ -263,9 +223,10 @@ void Estados(void) {
 		/*Se tiver no Verde Sul*/
 		else if (estado == 4) {
 			estado = 5;
-			Start_Time(TEMPO_AMARELO, AMARELO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
 			flag = 3;
 		}
+
 		/*Se tiver no amarelo ou vermelho SUl*/
 		else if (estado == 5 || estado == 6)
 			flag = 3;
@@ -300,7 +261,6 @@ void Ativa_Saidas(void) {
 			 * Ativados: Vermelho Sul e Vermelho norte*/
 			PORTB = (PORTB & (~(1 << YELLOW_N))) | ((1 << RED_N));
 		}
-
 		break;
 
 	case 4:
@@ -327,7 +287,6 @@ void Ativa_Saidas(void) {
 			 *DESATIVA AMARELO SUL
 			 *Ativados: Vermelho sul e Vermelho norte*/
 			PORTB = (PORTB & (~(1 << YELLOW_E))) | ((1 << RED_E));
-
 		}
 		break;
 
