@@ -44,10 +44,12 @@
 #define VERDE 1
 #define AMARELO 2
 #define VERMELHO 3
+#define Te_EMERGENCIA 4
 
 /*Tempos para o timer*/
 #define TEMPO_VERDE 100
 #define TEMPO_AMARELO_VERMELHO 100
+#define TEMPO_EMERGENCIA 500
 
 /*Tempos suplentes*/
 #define SHORT 200
@@ -64,7 +66,7 @@ void Init_Time(void);
 void hw_init(void);
 
 /*Dá START no timer escolhido */
-void Start_Time(uint8_t Time, uint8_t escolha);
+void Start_Time(uint16_t Time, uint8_t escolha);
 
 /* Transições entre estados*/
 void Estados(void);
@@ -96,11 +98,15 @@ ISR(TIMER1_OVF_vect) {
 	if (T_Amarelo_Vermelho)
 		T_Amarelo_Vermelho--;
 
+	if(T_Emergencia)
+		T_Emergencia--;
+
 }
 
 int main(void) {
 
 	hw_init();
+
 
 	while (1) {
 		Estados();
@@ -142,6 +148,7 @@ void hw_init(void) {
 	/*Tempos*/
 	Init_Time();
 	sei();
+	T_Verde= T_Amarelo_Vermelho= T_Emergencia=0;
 
 	/*Testa LEDS*/
 	Testa_Leds();
@@ -151,7 +158,7 @@ void hw_init(void) {
 
 }
 
-void Start_Time(uint8_t Time, uint8_t escolha) {
+void Start_Time(uint16_t Time, uint8_t escolha) {
 
 	switch (escolha) {
 	case VERDE:
@@ -182,11 +189,15 @@ void Estados(void) {
 	} else if (estado == 2 && !T_Amarelo_Vermelho) // tempo do amarelo N
 			{
 		estado = 3; /*Luz vermelha N*/
-		Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
+		if(flag)
+			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);
+		else
+			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
 
-	} else if (estado == 3 && !T_Amarelo_Vermelho) // tempo do vermelho N
+	} else if (estado == 3 && ((!T_Amarelo_Vermelho && flag!=2) || (!T_Emergencia && flag==2))) // tempo do vermelho N
 			{
 		estado = 4; /*Luz verde E*/
+		flag=0;
 		Start_Time(TEMPO_VERDE, VERDE);
 
 	} else if (estado == 4 && !T_Verde) // tempo do verde E
@@ -196,10 +207,15 @@ void Estados(void) {
 	} else if (estado == 5 && !T_Amarelo_Vermelho) // tempo do amarelo E
 			{
 		estado = 6; /*Luz vermelha E*/
-		Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
-	} else if (estado == 6 && !T_Amarelo_Vermelho) // tempo do vermelho E
+		if(flag)
+			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);
+		else
+			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
+
+	} else if (estado == 6 && ((!T_Amarelo_Vermelho && flag!=3 )|| (!T_Emergencia && flag==3))) // tempo do vermelho E
 			{
 		estado = 1; /* VERDE N*/
+		flag=0;
 		Start_Time(TEMPO_VERDE, VERDE);
 	}
 
@@ -213,23 +229,27 @@ void Estados(void) {
 		if (estado == 1) {
 			estado = 2;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
-			flag = 2;
+			flag=4;
 		}
 
 		/*Se tiver no Amarelo ou Vermelho Norte*/
-		else if (estado == 2 || estado == 3)
-			flag = 2;
-
-		/*Se tiver no Verde Sul*/
+		else if (estado == 3 && flag==1)
+			{
+			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);		/*Se tiver no Verde Sul*/
+			flag=2;
+			}
 		else if (estado == 4) {
 			estado = 5;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
-			flag = 3;
+			flag=4;
 		}
 
 		/*Se tiver no amarelo ou vermelho SUl*/
-		else if (estado == 5 || estado == 6)
-			flag = 3;
+		else if (estado == 6 && flag==1)
+		{
+		Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);		/*Se tiver no Verde Sul*/
+		flag=3;
+		}
 	}
 }
 
@@ -251,16 +271,11 @@ void Ativa_Saidas(void) {
 		break;
 
 	case 3:
-		if (flag == 2) {
-			PORTB = (1 << RED_N) | (1 << RED_E);
-			_delay_ms(5000);
-			flag = 0;
-		} else {
 			/*ATIVA VERMELHO NORTE,
 			 * DESATIVA AMARELO NORTE
 			 * Ativados: Vermelho Sul e Vermelho norte*/
 			PORTB = (PORTB & (~(1 << YELLOW_N))) | ((1 << RED_N));
-		}
+
 		break;
 
 	case 4:
@@ -278,17 +293,11 @@ void Ativa_Saidas(void) {
 		break;
 
 	case 6:
-		if (flag == 3) {
-			PORTB = (1 << RED_N) | (1 << RED_E);
-			_delay_ms(5000);
-			flag = 0;
-		} else {
 			/*ATIVA VERMELHO SUL,
 			 *DESATIVA AMARELO SUL
 			 *Ativados: Vermelho sul e Vermelho norte*/
 			PORTB = (PORTB & (~(1 << YELLOW_E))) | ((1 << RED_E));
-		}
-		break;
+			break;
 
 	default:
 		/*PISCAR AMARELO A CADA SEGUNDO
