@@ -55,7 +55,7 @@
 #define SHORT 200
 #define LONG 1000
 
-uint8_t estado;
+uint8_t estado, estado_emergencia;
 volatile uint8_t flag;
 volatile uint16_t T_Verde, T_Amarelo_Vermelho, T_Emergencia;
 
@@ -98,7 +98,7 @@ ISR(TIMER1_OVF_vect) {
 	if (T_Amarelo_Vermelho)
 		T_Amarelo_Vermelho--;
 
-	if(T_Emergencia)
+	if (T_Emergencia)
 		T_Emergencia--;
 
 }
@@ -106,7 +106,6 @@ ISR(TIMER1_OVF_vect) {
 int main(void) {
 
 	hw_init();
-
 
 	while (1) {
 		Estados();
@@ -143,12 +142,13 @@ void hw_init(void) {
 
 	/*Estados iniciais*/
 	estado = 1;
+	estado_emergencia = 0;
 	flag = 0;
 
 	/*Tempos*/
 	Init_Time();
 	sei();
-	T_Verde= T_Amarelo_Vermelho= T_Emergencia=0;
+	T_Verde = T_Amarelo_Vermelho = T_Emergencia = 0;
 
 	/*Testa LEDS*/
 	Testa_Leds();
@@ -189,15 +189,15 @@ void Estados(void) {
 	} else if (estado == 2 && !T_Amarelo_Vermelho) // tempo do amarelo N
 			{
 		estado = 3; /*Luz vermelha N*/
-		if(flag)
-			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);
+		if (estado_emergencia) //Caso tenha carregado no botão
+			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); //começa a contar o tempo de emergencia(10s)
 		else
-			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);//começa a contar o tempo normal(5s)
 
-	} else if (estado == 3 && ((!T_Amarelo_Vermelho && flag!=2) || (!T_Emergencia && flag==2))) // tempo do vermelho N
+	} else if (estado == 3 && ((!T_Amarelo_Vermelho && !estado_emergencia)|| (!T_Emergencia && estado_emergencia ))) // tempo do vermelho N
 			{
 		estado = 4; /*Luz verde E*/
-		flag=0;
+		estado_emergencia = 0;
 		Start_Time(TEMPO_VERDE, VERDE);
 
 	} else if (estado == 4 && !T_Verde) // tempo do verde E
@@ -207,15 +207,15 @@ void Estados(void) {
 	} else if (estado == 5 && !T_Amarelo_Vermelho) // tempo do amarelo E
 			{
 		estado = 6; /*Luz vermelha E*/
-		if(flag)
-			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);
+		if (estado_emergencia)//Caso tenha carregado no botão
+			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA);//começa a contar o tempo de emergencia(10s)
 		else
-			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);//começa a contar o tempo normal(5s)
 
-	} else if (estado == 6 && ((!T_Amarelo_Vermelho && flag!=3 )|| (!T_Emergencia && flag==3))) // tempo do vermelho E
+	} else if (estado == 6 && ((!T_Amarelo_Vermelho && !estado_emergencia) || (!T_Emergencia && estado_emergencia ))) // tempo do vermelho E
 			{
 		estado = 1; /* VERDE N*/
-		flag=0;
+		estado_emergencia = 0;
 		Start_Time(TEMPO_VERDE, VERDE);
 	}
 
@@ -223,33 +223,31 @@ void Estados(void) {
 	 * flag==2 ocorreu no lado NORTE
 	 * flag==3 ocorreu no lado SUL
 	 * */
-	if (flag == 1) {
+	if (flag) {
 
 		/*Se tiver no Verde Norte*/
 		if (estado == 1) {
 			estado = 2;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
-			flag=4;
-		}
-
-		/*Se tiver no Amarelo ou Vermelho Norte*/
-		else if (estado == 3 && flag==1)
-			{
-			Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);		/*Se tiver no Verde Sul*/
-			flag=2;
-			}
-		else if (estado == 4) {
+			estado_emergencia = 1;
+		} else if (estado == 2)
+			estado_emergencia = 1;
+		/*Se tiver no Vermelho Norte*/
+		else if (estado == 3) {
+			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); /*Se tiver no Verde Sul*/
+			estado_emergencia = 1;
+		} else if (estado == 4) {
 			estado = 5;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
-			flag=4;
+			estado_emergencia = 1;
+		} else if (estado == 5)
+			estado_emergencia = 1;
+		/*Se tiver no vermelho SUl*/
+		else if (estado == 6) {
+			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); /*Se tiver no Verde Sul*/
+			estado_emergencia = 1;
 		}
-
-		/*Se tiver no amarelo ou vermelho SUl*/
-		else if (estado == 6 && flag==1)
-		{
-		Start_Time(TEMPO_EMERGENCIA,Te_EMERGENCIA);		/*Se tiver no Verde Sul*/
-		flag=3;
-		}
+		flag = 0;
 	}
 }
 
@@ -271,10 +269,10 @@ void Ativa_Saidas(void) {
 		break;
 
 	case 3:
-			/*ATIVA VERMELHO NORTE,
-			 * DESATIVA AMARELO NORTE
-			 * Ativados: Vermelho Sul e Vermelho norte*/
-			PORTB = (PORTB & (~(1 << YELLOW_N))) | ((1 << RED_N));
+		/*ATIVA VERMELHO NORTE,
+		 * DESATIVA AMARELO NORTE
+		 * Ativados: Vermelho Sul e Vermelho norte*/
+		PORTB = (PORTB & (~(1 << YELLOW_N))) | ((1 << RED_N));
 
 		break;
 
@@ -293,11 +291,11 @@ void Ativa_Saidas(void) {
 		break;
 
 	case 6:
-			/*ATIVA VERMELHO SUL,
-			 *DESATIVA AMARELO SUL
-			 *Ativados: Vermelho sul e Vermelho norte*/
-			PORTB = (PORTB & (~(1 << YELLOW_E))) | ((1 << RED_E));
-			break;
+		/*ATIVA VERMELHO SUL,
+		 *DESATIVA AMARELO SUL
+		 *Ativados: Vermelho sul e Vermelho norte*/
+		PORTB = (PORTB & (~(1 << YELLOW_E))) | ((1 << RED_E));
+		break;
 
 	default:
 		/*PISCAR AMARELO A CADA SEGUNDO
