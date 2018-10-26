@@ -33,7 +33,7 @@
 #define GREEN_N PB0
 
 /**Botao emergencia*/
-#define EMERGENCIA PD3
+#define BTN_EMERGENCIA PD3
 
 /* 10ms = 625 clock cycles
  * CNT= (16M * 10ms / 256)
@@ -44,7 +44,7 @@
 #define VERDE 1
 #define AMARELO 2
 #define VERMELHO 3
-#define Te_EMERGENCIA 4
+#define EMERGENCIA 4
 
 /*Tempos para o timer*/
 #define TEMPO_VERDE 100
@@ -131,8 +131,8 @@ void hw_init(void) {
 			| (1 << GREEN_E) | (1 << RED_E);
 
 	/*Ativar o Pull Up*/
-	DDRD = DDRD & ~(1 << EMERGENCIA);
-	PORTD = PORTD | (1 << EMERGENCIA);
+	DDRD = DDRD & ~(1 << BTN_EMERGENCIA);
+	PORTD = PORTD | (1 << BTN_EMERGENCIA);
 
 	/*INT1 Falling edfe*/
 	EICRA = EICRA | (2 << ISC10);
@@ -190,7 +190,7 @@ void Estados(void) {
 			{
 		estado = 3; /*Luz vermelha N*/
 		if (estado_emergencia) //Caso tenha carregado no botão
-			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); //começa a contar o tempo de emergencia(10s)
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); //começa a contar o tempo de emergencia(10s)
 		else
 			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);//começa a contar o tempo normal(5s)
 
@@ -208,7 +208,7 @@ void Estados(void) {
 			{
 		estado = 6; /*Luz vermelha E*/
 		if (estado_emergencia)//Caso tenha carregado no botão
-			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA);//começa a contar o tempo de emergencia(10s)
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA);//começa a contar o tempo de emergencia(10s)
 		else
 			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);//começa a contar o tempo normal(5s)
 
@@ -230,21 +230,20 @@ void Estados(void) {
 			estado = 2;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
 			estado_emergencia = 1;
-		} else if (estado == 2)
+		} else if (estado == 2 || estado == 5)
 			estado_emergencia = 1;
 		/*Se tiver no Vermelho Norte*/
 		else if (estado == 3) {
-			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); /*Se tiver no Verde Sul*/
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*Se tiver no Verde Sul*/
 			estado_emergencia = 1;
 		} else if (estado == 4) {
 			estado = 5;
 			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
 			estado_emergencia = 1;
-		} else if (estado == 5)
-			estado_emergencia = 1;
+		}
 		/*Se tiver no vermelho SUl*/
 		else if (estado == 6) {
-			Start_Time(TEMPO_EMERGENCIA, Te_EMERGENCIA); /*Se tiver no Verde Sul*/
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*Se tiver no Verde Sul*/
 			estado_emergencia = 1;
 		}
 		flag = 0;
