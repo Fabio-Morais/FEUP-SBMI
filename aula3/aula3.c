@@ -1,8 +1,16 @@
 /*******************************************
- *  aula.c
+ *  aula3.c
  *  Created on: 06/10/2018 (eclipse, avr-gcc)
  *      Author: up201504257@fe.up.pt
+ *      		up201708979@fe.up.pt
  *
+ *	Objetivo: Implementar dois semaforos, um semaforo norte e um semaforo sul
+ *			  em que está 50s no verde norte, 5s no amarelo norte e depois 5s no vermelho, em seguida
+ *			  ativar o lado sul com os mesmos tempos.
+ *
+ *	Solução: Decrementar duas variaveis a cada 10ms, uma variavel para o LED verde e outra variavel para o
+ *			 LED amarelo e vermelho, pois para estes 2 o tempo é o mesmo.
+ *			  *
  *      Estado 1-> LUZ VERDE NORTE, LUZ VERMELHA SUL
  *      Estado 2-> LUZ AMARELA NORTE, LUZ VERMELHA SUL
  *      Estado 3-> LUZ VERMELHA NORTE, LUZ VERMELHA SUL
@@ -10,24 +18,24 @@
  *      Estado 5-> LUZ AMARELA SUL, LUZ VERMELHA NORTE
  *      Estado 6-> LUZ VERMELHA SUL, LUZ VERMELHA NORTE
  *
- *
- *	Solução: Decrementar duas variaveis a cada 10ms, uma variavel para o LED verde e outra variavel para o
- *			 LED amarelo e vermelho, pois para estes 2 o tempo é o mesmo.
+ *      Estado_emergencia 0-> estado normal de funcionamento
+ *      Estado_emergencia 1-> estado em modo de emergencia, fica 10s vermelho dos 2 lados
  *******************************************
  *	A melhor combinação de COUNT que achamos foi:
  *	CP=1, TP=256, COUNT=625
  *******************************************/
+#define NORMAL
 
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
 
-/*LEDS SUL*/
+/*Semaforo SUL*/
 #define RED_E PB5
 #define YELLOW_E PB4
 #define GREEN_E PB3
 
-/*LEDS NORTE*/
+/*Semaforo NORTE*/
 #define RED_N PB2
 #define YELLOW_N PB1
 #define GREEN_N PB0
@@ -46,10 +54,21 @@
 #define VERMELHO 3
 #define EMERGENCIA 4
 
+/*******************************************/
+#ifdef DEBUG
 /*Tempos para o timer*/
 #define TEMPO_VERDE 100
 #define TEMPO_AMARELO_VERMELHO 100
-#define TEMPO_EMERGENCIA 500
+#define TEMPO_EMERGENCIA 400
+#endif
+
+#ifdef NORMAL
+/*Tempos para o timer*/
+#define TEMPO_VERDE 5000
+#define TEMPO_AMARELO_VERMELHO 500
+#define TEMPO_EMERGENCIA 1000
+#endif
+/*******************************************/
 
 /*Tempos suplentes*/
 #define SHORT 200
@@ -71,13 +90,13 @@ void Start_Time(uint16_t Time, uint8_t escolha);
 /* Transições entre estados*/
 void Estados(void);
 
-/* Ativa as saidas (LEDS) de acordo com os estados*/
+/* Ativa as saidas (Luzes) de acordo com os estados*/
 void Ativa_Saidas(void);
 
-/*Testa funcionamento de todos os LEDS */
+/*Testa funcionamento de todas as luzes dos semaforos */
 void Testa_Leds(void);
 
-/* Pisca o LED amarelo, posição irregular*/
+/* Pisca a luz amarela, posição irregular*/
 void Erro(void);
 
 /*Interrupção do botão*/
@@ -91,7 +110,7 @@ ISR(TIMER1_OVF_vect) {
 	/*Reload TC1*/
 	TCNT1 = T1BOTTOM;
 
-	/*É possivel decrementar varios timers ao mesmo tempo assim*/
+	/*É possivel decrementar varios timers ao mesmo tempo */
 	if (T_Verde)
 		T_Verde--;
 
@@ -134,8 +153,8 @@ void hw_init(void) {
 	DDRD = DDRD & ~(1 << BTN_EMERGENCIA);
 	PORTD = PORTD | (1 << BTN_EMERGENCIA);
 
-	/*INT1 Falling edfe*/
-	EICRA = EICRA | (2 << ISC10);
+	/*INT1 rising edge*/
+	EICRA = EICRA | (2 << ISC11);
 
 	/*Ativar INT1*/
 	EIMSK = EIMSK | (1 << INT1);
@@ -150,7 +169,7 @@ void hw_init(void) {
 	sei();
 	T_Verde = T_Amarelo_Vermelho = T_Emergencia = 0;
 
-	/*Testa LEDS*/
+	/*Testa luzes dos semaforos*/
 	Testa_Leds();
 
 	/*Começa a contar o timer do verde*/
@@ -220,30 +239,34 @@ void Estados(void) {
 	}
 
 	/* flag==1 Ocorreu interrupçao do botão
-	 * flag==2 ocorreu no lado NORTE
-	 * flag==3 ocorreu no lado SUL
-	 * */
+	 * flag==0 Não ocorreu interrupção do botão*/
 	if (flag) {
 
-		/*Se tiver no Verde Norte*/
+		/*Se estiver no Verde Norte*/
 		if (estado == 1) {
 			estado = 2;
-			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO); /*ativa o timer de amarelo*/
 			estado_emergencia = 1;
+
+			/*Se estiver no amarelo N ou amarelo S*/
 		} else if (estado == 2 || estado == 5)
 			estado_emergencia = 1;
-		/*Se tiver no Vermelho Norte*/
+
+		/*Se estiver no Vermelho Norte*/
 		else if (estado == 3) {
-			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*Se tiver no Verde Sul*/
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*ativa o timer de emergencia*/
 			estado_emergencia = 1;
+
+			/*Se estiver no verde Sul*/
 		} else if (estado == 4) {
 			estado = 5;
-			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO);
+			Start_Time(TEMPO_AMARELO_VERMELHO, AMARELO); /*ativa o timer amarelo*/
 			estado_emergencia = 1;
 		}
-		/*Se tiver no vermelho SUl*/
+
+		/*Se estiver no vermelho SUl*/
 		else if (estado == 6) {
-			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*Se tiver no Verde Sul*/
+			Start_Time(TEMPO_EMERGENCIA, EMERGENCIA); /*ativa o timer de emergencia*/
 			estado_emergencia = 1;
 		}
 		flag = 0;
@@ -263,14 +286,14 @@ void Ativa_Saidas(void) {
 	case 2:
 		/*ATIVA AMARELO NORTE,
 		 * DESATIVA VERDE NORTE
-		 * Ativados: Amarelo norte e Vermelho SUl*/
+		 * **Ativados: Amarelo norte e Vermelho SUl** */
 		PORTB = (PORTB & (~(1 << GREEN_N))) | ((1 << YELLOW_N));
 		break;
 
 	case 3:
 		/*ATIVA VERMELHO NORTE,
 		 * DESATIVA AMARELO NORTE
-		 * Ativados: Vermelho Sul e Vermelho norte*/
+		 * **Ativados: Vermelho Sul e Vermelho norte** */
 		PORTB = (PORTB & (~(1 << YELLOW_N))) | ((1 << RED_N));
 
 		break;
@@ -278,21 +301,21 @@ void Ativa_Saidas(void) {
 	case 4:
 		/*ATIVA VERDE SUL,
 		 * DESATIVA VERMELHO SUL
-		 * Ativados: Verde Sul e Vermelho norte*/
+		 * **Ativados: Verde Sul e Vermelho norte** */
 		PORTB = (PORTB & (~(1 << RED_E))) | ((1 << GREEN_E));
 		break;
 
 	case 5:
 		/*ATIVA AMARELO SUL,
 		 * DESATIVA VERDE SUL
-		 * Ativados: Amarelo Sul e Vermelho norte*/
+		 * **Ativados: Amarelo Sul e Vermelho norte** */
 		PORTB = (PORTB & (~(1 << GREEN_E))) | ((1 << YELLOW_E));
 		break;
 
 	case 6:
 		/*ATIVA VERMELHO SUL,
 		 *DESATIVA AMARELO SUL
-		 *Ativados: Vermelho sul e Vermelho norte*/
+		 * **Ativados: Vermelho sul e Vermelho norte** */
 		PORTB = (PORTB & (~(1 << YELLOW_E))) | ((1 << RED_E));
 		break;
 
