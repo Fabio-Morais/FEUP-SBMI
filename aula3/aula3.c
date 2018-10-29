@@ -119,7 +119,6 @@ ISR(TIMER1_OVF_vect) {
 
 	if (T_Emergencia)
 		T_Emergencia--;
-
 }
 
 int main(void) {
@@ -130,7 +129,6 @@ int main(void) {
 		Estados();
 		Ativa_Saidas();
 	}
-
 }
 
 void Init_Time(void) {
@@ -140,7 +138,6 @@ void Init_Time(void) {
 	TCNT1 = T1BOTTOM; 				   //Load BOTTOM value ( 65536-625)
 	TIMSK1 = (1 << TOIE1);			   //Enable 0vf intrpt
 	TCCR1B = 4;						   // Start TC1 (TP=256)
-
 }
 
 void hw_init(void) {
@@ -174,7 +171,6 @@ void hw_init(void) {
 
 	/*Começa a contar o timer do verde*/
 	Start_Time(TEMPO_VERDE, VERDE);
-
 }
 
 void Start_Time(uint16_t Time, uint8_t escolha) {
@@ -213,7 +209,7 @@ void Estados(void) {
 		else
 			Start_Time(TEMPO_AMARELO_VERMELHO, VERMELHO);//começa a contar o tempo normal(5s)
 
-	} else if (estado == 3 && ((!T_Amarelo_Vermelho && !estado_emergencia)|| (!T_Emergencia && estado_emergencia ))) // tempo do vermelho N
+	} else if (estado == 3 && ((!T_Amarelo_Vermelho && !estado_emergencia) || (!T_Emergencia && estado_emergencia ))) // tempo do vermelho N
 			{
 		estado = 4; /*Luz verde E*/
 		estado_emergencia = 0;
@@ -325,7 +321,6 @@ void Ativa_Saidas(void) {
 		Erro();
 		break;
 	}
-
 }
 
 void Testa_Leds(void) {
