@@ -75,7 +75,7 @@
 #define SHORT 200
 #define LONG 1000
 
-uint8_t estado, estado_emergencia;
+uint8_t estado, estado_emergencia, Pre_estado, Pre_estado_emergencia;
 volatile uint8_t flag;
 volatile uint16_t T_Verde, T_Amarelo_Vermelho, T_Emergencia;
 
@@ -129,7 +129,10 @@ int main(void) {
 	while (1) {
 		Estados();
 		Ativa_Saidas();
-		printf("Normal:%d\n Emergencia: %d\n", estado, estado_emergencia);
+		if(estado!= Pre_estado || estado_emergencia != Pre_estado_emergencia)
+			printf("Normal:%d\n Emergencia: %d\n", estado, estado_emergencia);
+		Pre_estado=estado;
+		Pre_estado_emergencia=estado_emergencia;
 	}
 }
 
