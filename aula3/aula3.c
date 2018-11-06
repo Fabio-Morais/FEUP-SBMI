@@ -24,11 +24,12 @@
  *	A melhor combinação de COUNT que achamos foi:
  *	CP=1, TP=256, COUNT=625
  *******************************************/
-#define NORMAL
+#define DEBUG
 
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include "serial_printf.h"
 
 /*Semaforo SUL*/
 #define RED_E PB5
@@ -128,6 +129,7 @@ int main(void) {
 	while (1) {
 		Estados();
 		Ativa_Saidas();
+		printf("Normal:%d\n Emergencia: %d\n", estado, estado_emergencia);
 	}
 }
 
@@ -165,6 +167,10 @@ void hw_init(void) {
 	Init_Time();
 	sei();
 	T_Verde = T_Amarelo_Vermelho = T_Emergencia = 0;
+
+	/*Biblioteca printf*/
+	printf_init();
+	printf("Hello world");
 
 	/*Testa luzes dos semaforos*/
 	Testa_Leds();
