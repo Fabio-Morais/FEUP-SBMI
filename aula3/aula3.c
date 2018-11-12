@@ -75,7 +75,12 @@
 #define SHORT 200
 #define LONG 1000
 
-uint8_t estado, estado_emergencia, Pre_estado, Pre_estado_emergencia;
+uint8_t estado, estado_emergencia;
+
+#ifdef DEBUG
+uint8_t Pre_estado, Pre_estado_emergencia;
+#endif;
+
 volatile uint8_t flag;
 volatile uint16_t T_Verde, T_Amarelo_Vermelho, T_Emergencia;
 
@@ -129,10 +134,14 @@ int main(void) {
 	while (1) {
 		Estados();
 		Ativa_Saidas();
+
+
+		#ifdef DEBUG
 		if(estado!= Pre_estado || estado_emergencia != Pre_estado_emergencia)
 			printf("Normal:%d\n Emergencia: %d\n", estado, estado_emergencia);
 		Pre_estado=estado;
 		Pre_estado_emergencia=estado_emergencia;
+		#endif;
 	}
 }
 
@@ -155,8 +164,8 @@ void hw_init(void) {
 	DDRD = DDRD & ~(1 << BTN_EMERGENCIA);
 	PORTD = PORTD | (1 << BTN_EMERGENCIA);
 
-	/*INT1 rising edge*/
-	EICRA = EICRA | (2 << ISC11);
+	/*INT1 Falling Edge*/
+	EICRA = EICRA | (1 << ISC11) ;
 
 	/*Ativar INT1*/
 	EIMSK = EIMSK | (1 << INT1);
@@ -171,9 +180,11 @@ void hw_init(void) {
 	sei();
 	T_Verde = T_Amarelo_Vermelho = T_Emergencia = 0;
 
+	#ifdef DEBUG
 	/*Biblioteca printf*/
 	printf_init();
 	printf("Hello world");
+	#endif;
 
 	/*Testa luzes dos semaforos*/
 	Testa_Leds();
