@@ -205,7 +205,7 @@ void Start_Time(uint16_t Time, uint8_t escolha) {
 	case VERMELHO:
 		T_Amarelo_Vermelho = Time;
 		break;
-	case 4:
+	case EMERGENCIA:
 		T_Emergencia = Time;
 		break;
 	default:
