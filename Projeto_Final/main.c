@@ -55,13 +55,16 @@ void Debug_Printf();
 #endif
 
 int main(void) {
+	unsigned char a='1';
 	Init();
+
 	init_usart();
 	while (1) {
+
 		Sensores();
 		Calculo();
-		while ((UCSR0A & (1 << UDRE0)) == 0);
-		 UDR0 = (unsigned char)'2';
+		while (!( UCSR0A & (1<<UDRE0)) );
+		 UDR0 = a;
 		 _delay_ms(1000);
 
 
