@@ -1,9 +1,11 @@
 #include <avr/io.h>
-#include "serial_printf.h"
+#include <util/delay.h>
 
+//#include "serial_printf.h"
 #include "Led.h"
+#include "Bluetooth.h"
 
-#define DEBUG
+//#define DEBUG
 #define Sensor_OUT5 PC5
 #define Sensor_OUT4 PC4
 #define Sensor_OUT3 PC3
@@ -54,10 +56,13 @@ void Debug_Printf();
 
 int main(void) {
 	Init();
-
+	init_usart();
 	while (1) {
 		Sensores();
 		Calculo();
+		while ((UCSR0A & (1 << UDRE0)) == 0);
+		 UDR0 = (unsigned char)'2';
+		 _delay_ms(1000);
 
 
 #ifdef DEBUG
@@ -79,9 +84,10 @@ void Init() {
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 6;
 
-
+#ifdef DEBUG
 	printf_init();
 	printf("Robot\n");
+#endif
 	DDRC &= ~((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
 	PORTC |= ((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
