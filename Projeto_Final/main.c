@@ -22,7 +22,7 @@
 #define ESQUERDA 3
 #define DIREITA_DIREITA 4
 #define DIREITA 5
-#define ERRO 6
+#define PARADO 6
 
 /* 0-> Paradp
  * 255-> Velocidade máxima*/
@@ -30,14 +30,12 @@
 #define Mudanca_Suave 50
 #define Mudanca_Bruta 150
 
-
-
-
 /*OC2B PD3
  * OC2A PB3 */
 /*y= -2,55X+255*/
 
 uint8_t Sensor[5];
+uint8_t comando;
 
 /*Fazer a inicialização das variaveis*/
 void Init();
@@ -55,17 +53,21 @@ void Debug_Printf();
 #endif
 
 int main(void) {
-	unsigned char a='1';
+
 	Init();
 
 	init_usart();
+
 	while (1) {
 
 		Sensores();
-		Calculo();
-		while (!( UCSR0A & (1<<UDRE0)) );
-		 UDR0 = a;
-		 _delay_ms(1000);
+		if (comando) {
+			Calculo();
+		} else if (!comando) {
+			Motores(PARADO);
+		}
+
+		Send_Sensores(Sensor);
 
 
 #ifdef DEBUG
@@ -78,12 +80,12 @@ void Init() {
 
 	/*PWM Timer*/
 	TCCR2B = 0; // Stop TC2
-	TIFR2 |= (7<<TOV2); // Clear pending intr
-	TCCR2A = (3<<WGM20)|(1<<COM2A1) |(1<<COM2B1); // Fast PWM
-	TCCR2B |= (1<<WGM22) ; // Set at TOP
+	TIFR2 |= (7 << TOV2); // Clear pending intr
+	TCCR2A = (3 << WGM20) | (1 << COM2A1) | (1 << COM2B1); // Fast PWM
+	TCCR2B |= (1 << WGM22); // Set at TOP
 	TCNT2 = 0; // Load BOTTOM value
-	OCR2A=127;
-	OCR2B=127;
+	OCR2A = 127;
+	OCR2B = 127;
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 6;
 
@@ -95,10 +97,10 @@ void Init() {
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
 	PORTC |= ((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
-	DDRB = (1<<Motor_E);
-	DDRD= (1<<Motor_D);
-	PORTB = (1<<Motor_E);
-	PORTD= (1<<Motor_D);
+	DDRB = (1 << Motor_E);
+	DDRD = (1 << Motor_D);
+	PORTB = (1 << Motor_E);
+	PORTD = (1 << Motor_D);
 
 }
 
@@ -135,54 +137,54 @@ void Sensores() {
 
 void Calculo() {
 
-	if(!Sensor[2])
+	if (!Sensor[2])
 		Motores(OK);
-	else if(!Sensor[1])
+	else if (!Sensor[1])
 		Motores(ESQUERDA);
-	else if(!Sensor[0])
+	else if (!Sensor[0])
 		Motores(ESQUERDA_ESQUERDA);
-	else if(!Sensor[3])
+	else if (!Sensor[3])
 		Motores(DIREITA);
-	else if(!Sensor[4])
+	else if (!Sensor[4])
 		Motores(DIREITA_DIREITA);
 	else
-		Motores(ERRO);
+		Motores(PARADO);
 
 }
 /*OCR2A -> MOTOR ESQUERDA
  * OCR2B-> MOTOR DIREITA*/
-void Motores(int Percentagem_Duty){
+void Motores(int Percentagem_Duty) {
 
-	switch(Percentagem_Duty){
+	switch (Percentagem_Duty) {
 
 	case OK:
-		OCR2A=Velocidade_Default;
-		OCR2B=Velocidade_Default;
+		OCR2A = Velocidade_Default;
+		OCR2B = Velocidade_Default;
 		break;
 
 	case ESQUERDA_ESQUERDA:
-		OCR2A=Velocidade_Default-Mudanca_Bruta;
-		OCR2B=Velocidade_Default;
+		OCR2A = Velocidade_Default - Mudanca_Bruta;
+		OCR2B = Velocidade_Default;
 		break;
 
 	case ESQUERDA:
-		OCR2A=Velocidade_Default-Mudanca_Suave;
-		OCR2B=Velocidade_Default;
+		OCR2A = Velocidade_Default - Mudanca_Suave;
+		OCR2B = Velocidade_Default;
 		break;
 
 	case DIREITA_DIREITA:
-		OCR2A=Velocidade_Default;
-		OCR2B=Velocidade_Default-Mudanca_Bruta;
+		OCR2A = Velocidade_Default;
+		OCR2B = Velocidade_Default - Mudanca_Bruta;
 		break;
 
 	case DIREITA:
-		OCR2A=Velocidade_Default;
-		OCR2B=Velocidade_Default-Mudanca_Suave;
+		OCR2A = Velocidade_Default;
+		OCR2B = Velocidade_Default - Mudanca_Suave;
 		break;
 
-	case ERRO:
-		OCR2A=0;
-		OCR2B=0;
+	case PARADO:
+		OCR2A = 0;
+		OCR2B = 0;
 		break;
 	}
 
