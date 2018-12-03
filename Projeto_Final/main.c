@@ -1,24 +1,32 @@
+//#define DEBUG
+
+/*Bibliotecas padrao*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
-
 #include <util/delay.h>
 
-//#include "serial_printf.h"
+/*Ficheiros de bilbiotecas*/
+#ifdef DEBUG
+#include "serial_printf.h"
+#endif
+
+#ifndef DEBUG
 //#include "Led.h"
 #include "Bluetooth.h"
+#endif
 
-//#define DEBUG
+/*SENSORES*/
 #define Sensor_OUT5 PC5
 #define Sensor_OUT4 PC4
 #define Sensor_OUT3 PC3
 #define Sensor_OUT2 PC2
 #define Sensor_OUT1 PC1
 
+/*MOTORES*/
 #define Motor_E PB3
 #define Motor_D PD3
 
-#define T2TOP 255
-
+/*VALIDAÇÃO*/
 #define OK 1
 #define ESQUERDA_ESQUERDA 2
 #define ESQUERDA 3
@@ -26,44 +34,54 @@
 #define DIREITA 5
 #define PARADO 6
 
-/* 0-> Paradp
+/* 0-> Parado
  * 255-> Velocidade máxima*/
-
+/*VELOCIDADES PADRÃO*/
 #define Velocidade_Padrao 200
 #define Mudanca_Suave_Padrao 50
 #define Mudanca_Bruta_Padrao 150
 
+/*TIMERS*/
 #define T1BOTTOM 65536-62500
+#define T2TOP 255
 
-/*OC2B PD3
- * OC2A PB3 */
-/*y= -2,55X+255*/
+/*VARIAVEIS*/
+uint8_t Sensor[5];	//Sensor Linha
+uint8_t comando;	//Start and Stop
+uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
+volatile uint8_t flag; //Flag para IRS
 
-uint8_t Sensor[5];
-uint8_t comando;
-uint8_t Velocidade_Default,Mudanca_Suave,Mudanca_Bruta;
-volatile uint8_t flag;
+/********************************************************************************/
+
 /*Fazer a inicialização das variaveis*/
 void Init();
 
 /*Muda o vetor Sensor de acordo com o input*/
 void Sensores();
 
+/*Faz movimento dos motores de acordo com o estado dos sensores*/
 void Calculo();
 
+/*Envia para os motores os valores que a função Calculo fez*/
 void Motores();
 
-void  Motor_Calculation( uint8_t Data);
+/* Calcula e coloca nas variaveis Velocidades
+ * a percentagem de Data.
+ * Ex: Data=120----> Velocidade= 1,2*Velocidade*/
+void Motor_Calculation(uint8_t Data);
 
 /*Modo debug*/
 #ifdef DEBUG
 void Debug_Printf();
 #endif
 
+/********************************************************************************/
 
+/* Interrupção do timer 1
+ * Incrementa a cada 1s */
 ISR(TIMER1_OVF_vect) {
- TCNT1 = T1BOTTOM; // reload TC1
- flag++;
+	TCNT1 = T1BOTTOM; // reload TC1
+	flag++;
 }
 
 int main(void) {
@@ -78,33 +96,33 @@ int main(void) {
 
 		Calculo();
 
-
 		Send_Sensores(Sensor);
 
-		Motor_Calculation(Receive_Data());
-		_delay_ms(30);
-
-
+		//Motor_Calculation(Receive_Data());
+		//_delay_ms(30);
 
 #ifdef DEBUG
-Debug_Printf();
+		Debug_Printf();
+		_delay_ms(1000);
 #endif
 
 	}
 }
-void Motor_Calculation( unsigned char Data){
-	if((Data>=1) & (Data<=120))
-	{
-		float Data_Float=(uint8_t)Data;
-		Velocidade_Default= Velocidade_Padrao*(Data_Float/100);
-		Mudanca_Bruta= Mudanca_Bruta_Padrao *(Data_Float/100);
-		Mudanca_Suave= Mudanca_Suave_Padrao *(Data_Float/100);
+
+/********************************************************************************/
+
+void Motor_Calculation(unsigned char Data) {
+	if ((Data >= 55) & (Data <= 120)) {
+		float Data_Float = (uint8_t) Data;
+
+		Velocidade_Default = Velocidade_Padrao * (Data_Float / 100);
+		Mudanca_Bruta = Mudanca_Bruta_Padrao * (Data_Float / 100);
+		Mudanca_Suave = Mudanca_Suave_Padrao * (Data_Float / 100);
 	}
 
 	else
 		return;
 }
-
 
 void Init() {
 
@@ -120,35 +138,43 @@ void Init() {
 	TCCR2B = 6;
 
 	/*Timer 1*/
-	 TCCR1B = 0; // Stop TC1
-	 TIFR1 = (7<<TOV1) // Clear all
-	 | (1<<ICF1); // pending interrupts
-	 TCCR1A = 0; // NORMAL mode
-	 TCNT1 = T1BOTTOM; // Load BOTTOM value
-	 TIMSK1 = (1<<TOIE1); // Enable Ovf intrpt
-	 TCCR1B = 4; // Start TC1 (TP=256)
-
-	 sei();
+	TCCR1B = 0; // Stop TC1
+	TIFR1 = (7 << TOV1) // Clear all
+	| (1 << ICF1); // pending interrupts
+	TCCR1A = 0; // NORMAL mode
+	TCNT1 = T1BOTTOM; // Load BOTTOM value
+	TIMSK1 = (1 << TOIE1); // Enable Ovf intrpt
+	TCCR1B = 4; // Start TC1 (TP=256)
+	/*enable interrupt.*/
+	sei();
 
 #ifdef DEBUG
 	printf_init();
 	printf("Robot\n");
 #endif
+
+	/*SENSORES COM PULL UP*/
 	DDRC &= ~((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
+
 	PORTC |= ((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
+
+	/*MOTORES*/
 	DDRB = (1 << Motor_E);
 	DDRD = (1 << Motor_D);
 	PORTB = (1 << Motor_E);
 	PORTD = (1 << Motor_D);
 
-
-	Velocidade_Default=Velocidade_Padrao;
-	Mudanca_Bruta= Mudanca_Bruta_Padrao;
-	Mudanca_Suave=Mudanca_Suave_Padrao;
+	/*ATRIBUIÇÃO DAS VELOCIDADES*/
+	Velocidade_Default = Velocidade_Padrao;
+	Mudanca_Bruta = Mudanca_Bruta_Padrao;
+	Mudanca_Suave = Mudanca_Suave_Padrao;
 }
 
+/* [ OUT1  OUT2  OUT3  OUT4  OUT5 ]
+ *    0     1     2      3     4
+ * */
 void Sensores() {
 	if (PINC & (1 << Sensor_OUT5))
 		Sensor[4] = 1;
