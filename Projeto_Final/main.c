@@ -1,8 +1,10 @@
 #include <avr/io.h>
+#include <avr/interrupt.h>
+
 #include <util/delay.h>
 
 //#include "serial_printf.h"
-#include "Led.h"
+//#include "Led.h"
 #include "Bluetooth.h"
 
 //#define DEBUG
@@ -26,9 +28,12 @@
 
 /* 0-> Paradp
  * 255-> Velocidade máxima*/
-#define Velocidade_Default 200
-#define Mudanca_Suave 50
-#define Mudanca_Bruta 150
+
+#define Velocidade_Padrao 200
+#define Mudanca_Suave_Padrao 50
+#define Mudanca_Bruta_Padrao 150
+
+#define T1BOTTOM 65536-62500
 
 /*OC2B PD3
  * OC2A PB3 */
@@ -36,7 +41,8 @@
 
 uint8_t Sensor[5];
 uint8_t comando;
-
+uint8_t Velocidade_Default,Mudanca_Suave,Mudanca_Bruta;
+volatile uint8_t flag;
 /*Fazer a inicialização das variaveis*/
 void Init();
 
@@ -47,10 +53,18 @@ void Calculo();
 
 void Motores();
 
+void  Motor_Calculation( uint8_t Data);
+
 /*Modo debug*/
 #ifdef DEBUG
 void Debug_Printf();
 #endif
+
+
+ISR(TIMER1_OVF_vect) {
+ TCNT1 = T1BOTTOM; // reload TC1
+ flag++;
+}
 
 int main(void) {
 
@@ -61,20 +75,36 @@ int main(void) {
 	while (1) {
 
 		Sensores();
-		if (comando) {
-			Calculo();
-		} else if (!comando) {
-			Motores(PARADO);
-		}
+
+		Calculo();
+
 
 		Send_Sensores(Sensor);
 
+		Motor_Calculation(Receive_Data());
+		_delay_ms(30);
+
+
 
 #ifdef DEBUG
-		Debug_Printf();
+Debug_Printf();
 #endif
+
 	}
 }
+void Motor_Calculation( unsigned char Data){
+	if((Data>=1) & (Data<=120))
+	{
+		float Data_Float=(uint8_t)Data;
+		Velocidade_Default= Velocidade_Padrao*(Data_Float/100);
+		Mudanca_Bruta= Mudanca_Bruta_Padrao *(Data_Float/100);
+		Mudanca_Suave= Mudanca_Suave_Padrao *(Data_Float/100);
+	}
+
+	else
+		return;
+}
+
 
 void Init() {
 
@@ -89,6 +119,17 @@ void Init() {
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 6;
 
+	/*Timer 1*/
+	 TCCR1B = 0; // Stop TC1
+	 TIFR1 = (7<<TOV1) // Clear all
+	 | (1<<ICF1); // pending interrupts
+	 TCCR1A = 0; // NORMAL mode
+	 TCNT1 = T1BOTTOM; // Load BOTTOM value
+	 TIMSK1 = (1<<TOIE1); // Enable Ovf intrpt
+	 TCCR1B = 4; // Start TC1 (TP=256)
+
+	 sei();
+
 #ifdef DEBUG
 	printf_init();
 	printf("Robot\n");
@@ -102,6 +143,10 @@ void Init() {
 	PORTB = (1 << Motor_E);
 	PORTD = (1 << Motor_D);
 
+
+	Velocidade_Default=Velocidade_Padrao;
+	Mudanca_Bruta= Mudanca_Bruta_Padrao;
+	Mudanca_Suave=Mudanca_Suave_Padrao;
 }
 
 void Sensores() {
@@ -192,6 +237,6 @@ void Motores(int Percentagem_Duty) {
 
 #ifdef DEBUG
 void Debug_Printf() {
-	printf("%d %d %d %d %d\nocra:%d  ocrB:%d\n\n\n", Sensor[0], Sensor[1], Sensor[2], Sensor[3],Sensor[4], OCR2A, OCR2B);
+	printf("%d %d %d %d %d\nocra:%d  ocrB:%d->%d\n\n\n", Sensor[0], Sensor[1], Sensor[2], Sensor[3],Sensor[4], OCR2A, OCR2B, flag);
 }
 #endif
