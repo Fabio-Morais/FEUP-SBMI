@@ -11,8 +11,8 @@
 #endif
 
 #ifndef DEBUG
-//#include "Led.h"
-#include "Bluetooth.h"
+#include "Led.h"
+//#include "Bluetooth.h"
 #endif
 
 /*SENSORES*/
@@ -38,7 +38,7 @@
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
 #define Velocidade_Padrao 200
-#define Mudanca_Suave_Padrao 50
+#define Mudanca_Suave_Padrao 90
 #define Mudanca_Bruta_Padrao 150
 
 /*TIMERS*/
@@ -47,9 +47,9 @@
 
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
-uint8_t comando;	//Start and Stop
 uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
 volatile uint8_t flag; //Flag para IRS
+volatile uint8_t Comando; //Start and Stop
 
 /********************************************************************************/
 
@@ -63,7 +63,7 @@ void Sensores();
 void Calculo();
 
 /*Envia para os motores os valores que a função Calculo fez*/
-void Motores();
+void Motores(uint8_t Percentagem_Duty);
 
 /* Calcula e coloca nas variaveis Velocidades
  * a percentagem de Data.
@@ -84,19 +84,48 @@ ISR(TIMER1_OVF_vect) {
 	flag++;
 }
 
+#ifdef BLUE
+ISR(USART_RX_vect){
+
+	unsigned char RecByte;
+	RecByte=(uint8_t)UDR0;
+	if(RecByte==151 || RecByte==150)
+		Comando= RecByte;
+
+}
+#endif
 int main(void) {
 
 	Init();
-
+#ifdef BLUE
 	init_usart();
+#endif
+
+	lcd_init();
+	_delay_ms(50);
+	Comando=150;
+
+	lcd_gotoxy(1, 1);
+	_delay_ms(10);
+	unsigned char str[6]= "hello";
+	lcd_print("Oi gatjinha");
+
 
 	while (1) {
+		lcd_command(0x08);
+		_delay_ms(500);
+		lcd_command(0x0C);
+		_delay_ms(500);
 
 		Sensores();
+		if(Comando==150)
+			Calculo();
+		else if(Comando==151)
+			Motores(PARADO);
 
-		Calculo();
-
+#ifdef BLUE
 		Send_Sensores(Sensor);
+#endif
 
 		//Motor_Calculation(Receive_Data());
 		//_delay_ms(30);
@@ -137,6 +166,7 @@ void Init() {
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 6;
 
+#ifdef BLUE
 	/*Timer 1*/
 	TCCR1B = 0; // Stop TC1
 	TIFR1 = (7 << TOV1) // Clear all
@@ -147,6 +177,7 @@ void Init() {
 	TCCR1B = 4; // Start TC1 (TP=256)
 	/*enable interrupt.*/
 	sei();
+#endif
 
 #ifdef DEBUG
 	printf_init();
@@ -162,7 +193,9 @@ void Init() {
 
 	/*MOTORES*/
 	DDRB = (1 << Motor_E);
-	DDRD = (1 << Motor_D);
+	//DDRD = (1 << Motor_D);
+	DDRD = 0xFF;
+
 	PORTB = (1 << Motor_E);
 	PORTD = (1 << Motor_D);
 
@@ -224,7 +257,7 @@ void Calculo() {
 }
 /*OCR2A -> MOTOR ESQUERDA
  * OCR2B-> MOTOR DIREITA*/
-void Motores(int Percentagem_Duty) {
+void Motores(uint8_t Percentagem_Duty) {
 
 	switch (Percentagem_Duty) {
 

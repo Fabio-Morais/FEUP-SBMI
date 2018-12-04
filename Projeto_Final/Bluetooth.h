@@ -2,6 +2,7 @@
 #define Blue
 
 #include <avr/io.h>
+#include <avr/interrupt.h>
 
 /*Baud rate do hc-06*/
 #define BAUD 9600
@@ -22,8 +23,10 @@ void init_usart(void){
 
 	 /*Velocidade dupla*/
 	 UCSR0A= (1<<U2X0);
-	 // Ativar Rx, Tx
-	 UCSR0B = (1<<RXEN0) | (1<<TXEN0);
+	 // Ativar Rx, Tx e interrupção no Rx
+	 UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);
+
+;
 }
 
 /*Envia Codigo ascii para o bluetooth*/
@@ -41,31 +44,31 @@ void Send_Sensores(uint8_t Sensor[5]){
 		Send_Data(1);
 	else
 		Send_Data(11);
-	_delay_ms(20);
+	_delay_ms(30);
 
 	if(!Sensor[1])
 		Send_Data(2);
 	else
 		Send_Data(12);
-	_delay_ms(20);
+	_delay_ms(30);
 
 	if(!Sensor[2])
 		Send_Data(3);
 	else
 		Send_Data(13);
-	_delay_ms(20);
+	_delay_ms(30);
 
 	if(!Sensor[3])
 		Send_Data(4);
 	else
 		Send_Data(14);
-	_delay_ms(20);
+	_delay_ms(30);
 
 	if(!Sensor[4])
 		Send_Data(5);
 	else
 		Send_Data(15);
-	_delay_ms(20);
+	_delay_ms(30);
 
 	/*Tentativa de contar a volta */
 	if( !Sensor[0] & !Sensor[1] & !Sensor[2] & !Sensor[3] & !Sensor[4] )
@@ -76,7 +79,7 @@ void Send_Sensores(uint8_t Sensor[5]){
 			{
 		Send_Data(20);
 		aux=0;
-		_delay_ms(20);
+		_delay_ms(30);
 			}
 
 return;
