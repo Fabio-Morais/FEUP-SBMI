@@ -1,5 +1,5 @@
 //#define DEBUG
-
+#define BLUE
 /*Bibliotecas padrao*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -12,7 +12,7 @@
 
 #ifndef DEBUG
 #include "Led.h"
-//#include "Bluetooth.h"
+#include "Bluetooth.h"
 #endif
 
 /*SENSORES*/
@@ -26,6 +26,10 @@
 #define Motor_E PB3
 #define Motor_D PD3
 
+/*LEDS*/
+#define LED_AZUL PC0
+#define LED_VERMELHO PB0
+
 /*VALIDAÇÃO*/
 #define OK 1
 #define ESQUERDA_ESQUERDA 2
@@ -37,9 +41,9 @@
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
-#define Velocidade_Padrao 200
-#define Mudanca_Suave_Padrao 90
-#define Mudanca_Bruta_Padrao 150
+#define Velocidade_Padrao 180
+#define Mudanca_Suave_Padrao 10
+#define Mudanca_Bruta_Padrao 170
 
 /*TIMERS*/
 #define T1BOTTOM 65536-62500
@@ -65,9 +69,10 @@ void Calculo();
 /*Envia para os motores os valores que a função Calculo fez*/
 void Motores(uint8_t Percentagem_Duty);
 
-/* Calcula e coloca nas variaveis Velocidades
- * a percentagem de Data.
- * Ex: Data=120----> Velocidade= 1,2*Velocidade*/
+/* Coloca na variavei Velocidade a escolha do bluetooth
+ * Recebe valores entre 1 e 5
+ * 3 é o valor padrão
+ * */
 void Motor_Calculation(uint8_t Data);
 
 /*Modo debug*/
@@ -97,36 +102,41 @@ ISR(USART_RX_vect){
 int main(void) {
 
 	Init();
+#ifndef DEBUG
 #ifdef BLUE
 	init_usart();
 #endif
+#endif
 
 	lcd_init();
-	_delay_ms(50);
+
 	Comando=150;
-
-	lcd_gotoxy(1, 1);
-	_delay_ms(10);
-	unsigned char str[6]= "hello";
-	lcd_print("Oi gatjinha");
-
-
 	while (1) {
-		lcd_command(0x08);
-		_delay_ms(500);
-		lcd_command(0x0C);
-		_delay_ms(500);
 
 		Sensores();
 		if(Comando==150)
+			{
 			Calculo();
-		else if(Comando==151)
-			Motores(PARADO);
+			PORTC |= (1<<LED_AZUL);
+			PORTB &= ~(1<<LED_VERMELHO);
+			lcd_gotoxy(1, 2);
+			lcd_print("RUN ");
 
+			}
+		else if(Comando==151)
+		{
+			Motores(PARADO);
+			PORTB ^= (1<<LED_VERMELHO);
+			PORTC &= ~(1<<LED_AZUL);
+			lcd_gotoxy(1, 2);
+			lcd_print("STOP");
+		}
+		lcd_print_lcd(Sensor);
+#ifndef DEBUG
 #ifdef BLUE
 		Send_Sensores(Sensor);
 #endif
-
+#endif
 		//Motor_Calculation(Receive_Data());
 		//_delay_ms(30);
 
@@ -164,7 +174,7 @@ void Init() {
 	OCR2A = 127;
 	OCR2B = 127;
 	TIMSK2 = 0; // Disable interrupts
-	TCCR2B = 6;
+	TCCR2B = 2;
 
 #ifdef BLUE
 	/*Timer 1*/
@@ -174,7 +184,7 @@ void Init() {
 	TCCR1A = 0; // NORMAL mode
 	TCNT1 = T1BOTTOM; // Load BOTTOM value
 	TIMSK1 = (1 << TOIE1); // Enable Ovf intrpt
-	TCCR1B = 4; // Start TC1 (TP=256)
+	TCCR1B = 2; // Start TC1 (TP=256)
 	/*enable interrupt.*/
 	sei();
 #endif
@@ -191,8 +201,12 @@ void Init() {
 	PORTC |= ((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
 
+	/*LEDS*/
+	DDRC |= (1<<LED_AZUL);
+	DDRB |= (1<<LED_VERMELHO);
+
 	/*MOTORES*/
-	DDRB = (1 << Motor_E);
+	DDRB |= (1 << Motor_E);
 	//DDRD = (1 << Motor_D);
 	DDRD = 0xFF;
 
@@ -251,8 +265,7 @@ void Calculo() {
 		Motores(DIREITA);
 	else if (!Sensor[4])
 		Motores(DIREITA_DIREITA);
-	else
-		Motores(PARADO);
+
 
 }
 /*OCR2A -> MOTOR ESQUERDA
