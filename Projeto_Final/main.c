@@ -31,29 +31,39 @@
 #define LED_VERMELHO PB0
 
 /*VALIDAÇÃO*/
-#define OK 1
-#define ESQUERDA_ESQUERDA 2
-#define ESQUERDA 3
-#define DIREITA_DIREITA 4
-#define DIREITA 5
-#define PARADO 6
+#define OK -1
+#define ESQUERDA_ESQUERDA -2
+#define ESQUERDA -3
+#define DIREITA_DIREITA -4
+#define DIREITA -5
+#define PARADO -6
 
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
-#define Velocidade_Padrao 180
+#define Velocidade_Padrao 230
 #define Mudanca_Suave_Padrao 10
-#define Mudanca_Bruta_Padrao 170
+#define Mudanca_Bruta_Padrao 160
 
 /*TIMERS*/
 #define T1BOTTOM 65536-62500
 #define T2TOP 255
 
+/*MODO DE OPERAÇÃO*/
+#define MODO_MANUAL 40
+#define MODO_AUTOMATICO 41
+
+/*ESTADO ROBO*/
+#define RUN 150
+#define STOP 151
+
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
 uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
-volatile uint8_t flag; //Flag para IRS
+volatile uint16_t Tempo_1ms; //Tempos
 volatile uint8_t Comando; //Start and Stop
+volatile uint8_t Modo_Robo; // Modo manual ou automatico
+volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
 
 /********************************************************************************/
 
@@ -67,7 +77,7 @@ void Sensores();
 void Calculo();
 
 /*Envia para os motores os valores que a função Calculo fez*/
-void Motores(uint8_t Percentagem_Duty);
+void Motores(int8_t Valid);
 
 /* Coloca na variavei Velocidade a escolha do bluetooth
  * Recebe valores entre 1 e 5
@@ -83,10 +93,10 @@ void Debug_Printf();
 /********************************************************************************/
 
 /* Interrupção do timer 1
- * Incrementa a cada 1s */
+ * Incrementa a cada 1ms */
 ISR(TIMER1_OVF_vect) {
 	TCNT1 = T1BOTTOM; // reload TC1
-	flag++;
+	Tempo_1ms++;
 }
 
 #ifdef BLUE
@@ -96,6 +106,25 @@ ISR(USART_RX_vect){
 	RecByte=(uint8_t)UDR0;
 	if(RecByte==151 || RecByte==150)
 		Comando= RecByte;
+	else if(RecByte>=1 && RecByte<=4)
+	{
+		if(RecByte==1) //RECEBE DIREITA
+			Controlo_Manual=DIREITA_DIREITA;
+		else if(RecByte==2) //RECEBE ESQUERDA
+			Controlo_Manual=ESQUERDA_ESQUERDA;
+		else if(RecByte==3) //RECEBE FRENTE
+			{
+			OCR2A= 200;
+			OCR2B=200;
+			Controlo_Manual=-10;
+
+			}
+
+	}
+	else if(RecByte==5 || (RecByte>=11 && RecByte<=14)) //RECEBE PARADO
+		Controlo_Manual=PARADO;
+	else if(RecByte==40 || RecByte==41)
+		Modo_Robo=RecByte;
 
 }
 #endif
@@ -110,35 +139,51 @@ int main(void) {
 
 	lcd_init();
 
-	Comando=150;
+	Comando=STOP;
+	Modo_Robo=MODO_AUTOMATICO;
 	while (1) {
 
-		Sensores();
-		if(Comando==150)
-			{
-			Calculo();
+		/*ANDA COM SENSORES*/
+		if(Modo_Robo== MODO_AUTOMATICO){
+			Controlo_Manual=-111;
+			Sensores();
+					if(Comando==RUN)
+						{
+						Calculo();
+						PORTC |= (1<<LED_AZUL);
+						PORTB &= ~(1<<LED_VERMELHO);
+						lcd_gotoxy(1, 2);
+						lcd_print("RUN ");
+
+						}
+					else if(Comando==STOP)
+					{
+						Motores(PARADO);
+						PORTB ^= (1<<LED_VERMELHO);
+						PORTC &= ~(1<<LED_AZUL);
+						lcd_gotoxy(1, 2);
+						lcd_print("STOP");
+					}
+					lcd_print_lcd(Sensor);
+		}
+		/*ANDA POR CONTROLO REMOTO*/
+		else if(Modo_Robo== MODO_MANUAL){
 			PORTC |= (1<<LED_AZUL);
 			PORTB &= ~(1<<LED_VERMELHO);
-			lcd_gotoxy(1, 2);
-			lcd_print("RUN ");
+			if(Controlo_Manual != -111)
+			{
+				Motores(Controlo_Manual);
+				_delay_ms(30);
 
 			}
-		else if(Comando==151)
-		{
-			Motores(PARADO);
-			PORTB ^= (1<<LED_VERMELHO);
-			PORTC &= ~(1<<LED_AZUL);
-			lcd_gotoxy(1, 2);
-			lcd_print("STOP");
 		}
-		lcd_print_lcd(Sensor);
+
+
 #ifndef DEBUG
 #ifdef BLUE
 		Send_Sensores(Sensor);
 #endif
 #endif
-		//Motor_Calculation(Receive_Data());
-		//_delay_ms(30);
 
 #ifdef DEBUG
 		Debug_Printf();
@@ -184,7 +229,7 @@ void Init() {
 	TCCR1A = 0; // NORMAL mode
 	TCNT1 = T1BOTTOM; // Load BOTTOM value
 	TIMSK1 = (1 << TOIE1); // Enable Ovf intrpt
-	TCCR1B = 2; // Start TC1 (TP=256)
+	TCCR1B = 1; // Start TC1 (TP=256)
 	/*enable interrupt.*/
 	sei();
 #endif
@@ -270,9 +315,9 @@ void Calculo() {
 }
 /*OCR2A -> MOTOR ESQUERDA
  * OCR2B-> MOTOR DIREITA*/
-void Motores(uint8_t Percentagem_Duty) {
+void Motores(int8_t Valid) {
 
-	switch (Percentagem_Duty) {
+	switch (Valid) {
 
 	case OK:
 		OCR2A = Velocidade_Default;
