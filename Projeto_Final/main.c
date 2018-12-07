@@ -46,7 +46,7 @@
 #define Mudanca_Bruta_Padrao 160
 
 /*TIMERS*/
-#define T1BOTTOM 65536-62500
+#define T1BOTTOM 65536-16000
 #define T2TOP 255
 
 /*MODO DE OPERAÇÃO*/
@@ -60,11 +60,11 @@
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
 uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
-volatile uint16_t Tempo_1ms; //Tempos
+volatile uint16_t Tempo_1ms, Tempo_3s; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
 volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
-
+volatile uint8_t Flag_Ciclo; //Para correr no primeiro ciclo
 /********************************************************************************/
 
 /*Fazer a inicialização das variaveis*/
@@ -96,39 +96,44 @@ void Debug_Printf();
  * Incrementa a cada 1ms */
 ISR(TIMER1_OVF_vect) {
 	TCNT1 = T1BOTTOM; // reload TC1
-	Tempo_1ms++;
+	if(Tempo_1ms>0)
+		Tempo_1ms--;
+	if(Tempo_3s>0)
+		Tempo_3s--;
 }
 
 #ifdef BLUE
-ISR(USART_RX_vect){
+/*RECEBE DADOS BLUETOOTH*/
+ISR(USART_RX_vect) {
 
 	unsigned char RecByte;
-	RecByte=(uint8_t)UDR0;
-	if(RecByte==151 || RecByte==150)
-		Comando= RecByte;
-	else if(RecByte>=1 && RecByte<=4)
-	{
-		if(RecByte==1) //RECEBE DIREITA
-			Controlo_Manual=DIREITA_DIREITA;
-		else if(RecByte==2) //RECEBE ESQUERDA
-			Controlo_Manual=ESQUERDA_ESQUERDA;
-		else if(RecByte==3) //RECEBE FRENTE
-			{
-			OCR2A= 200;
-			OCR2B=200;
-			Controlo_Manual=-10;
+	RecByte = (uint8_t) UDR0;
+	if (RecByte == 151 || RecByte == 150)
+		Comando = RecByte;
+	else if ((RecByte >= 1) && (RecByte <= 3)) {
+		if (RecByte == 1) //RECEBE DIREITA
+			Controlo_Manual = DIREITA_DIREITA;
+		else if (RecByte == 2) //RECEBE ESQUERDA
+			Controlo_Manual = ESQUERDA_ESQUERDA;
+		else if (RecByte == 3) //RECEBE FRENTE
+				{
+			Controlo_Manual = OK;
+				}
 
-			}
+	} else if (RecByte == 5 || (RecByte >= 11 && RecByte <= 14)) //RECEBE PARADO
+		Controlo_Manual = PARADO;
+	else if (RecByte == 40 || RecByte == 41)
+		Modo_Robo = RecByte;
 
-	}
-	else if(RecByte==5 || (RecByte>=11 && RecByte<=14)) //RECEBE PARADO
-		Controlo_Manual=PARADO;
-	else if(RecByte==40 || RecByte==41)
-		Modo_Robo=RecByte;
-
+	Tempo_3s=2000;
 }
 #endif
+
+/*********************************************************************************/
+
 int main(void) {
+
+uint8_t Controlo_Manual_X;
 
 	Init();
 #ifndef DEBUG
@@ -139,45 +144,72 @@ int main(void) {
 
 	lcd_init();
 
-	Comando=STOP;
-	Modo_Robo=MODO_AUTOMATICO;
+	Comando = STOP;
+	Modo_Robo = MODO_AUTOMATICO;
+	Flag_Ciclo=0;
+
 	while (1) {
-
+		/*******************/
 		/*ANDA COM SENSORES*/
-		if(Modo_Robo== MODO_AUTOMATICO){
-			Controlo_Manual=-111;
+		/*******************/
+		if (Modo_Robo == MODO_AUTOMATICO) {
+			Controlo_Manual = -111;
 			Sensores();
-					if(Comando==RUN)
-						{
-						Calculo();
-						PORTC |= (1<<LED_AZUL);
-						PORTB &= ~(1<<LED_VERMELHO);
-						lcd_gotoxy(1, 2);
-						lcd_print("RUN ");
+			if (Comando == RUN) {
+				Calculo();
+				PORTC |= (1 << LED_AZUL);
+				PORTB &= ~(1 << LED_VERMELHO);
+				lcd_gotoxy(1, 2);
+				lcd_print("RUN ");
 
-						}
-					else if(Comando==STOP)
-					{
-						Motores(PARADO);
-						PORTB ^= (1<<LED_VERMELHO);
-						PORTC &= ~(1<<LED_AZUL);
-						lcd_gotoxy(1, 2);
-						lcd_print("STOP");
-					}
-					lcd_print_lcd(Sensor);
+			} else if (Comando == STOP) {
+				Motores(PARADO);
+				PORTB ^= (1 << LED_VERMELHO);
+				PORTC &= ~(1 << LED_AZUL);
+				lcd_gotoxy(1, 2);
+				lcd_print("STOP");
+			}
+			lcd_print_lcd(Sensor);
 		}
+		/***************************/
 		/*ANDA POR CONTROLO REMOTO*/
-		else if(Modo_Robo== MODO_MANUAL){
-			PORTC |= (1<<LED_AZUL);
-			PORTB &= ~(1<<LED_VERMELHO);
-			if(Controlo_Manual != -111)
+	    /**************************/
+		else if (Modo_Robo == MODO_MANUAL) {
+			/*Faz 1 vez no inicio*/
+			if(!Flag_Ciclo)
 			{
-				Motores(Controlo_Manual);
-				_delay_ms(30);
+			lcdCommand(0x01);
+			_delay_ms(20);
+			lcd_gotoxy(1, 1);
+			lcd_print("CONECTADO");
+			Flag_Ciclo=1;
+			PORTC |= (1 << LED_AZUL);
+			PORTB &= ~(1 << LED_VERMELHO);
+			}
+
+
+			if (Controlo_Manual != -111) {
+				Controlo_Manual_X=Controlo_Manual;
+				Motores(Controlo_Manual_X);
+				_delay_us(150);
 
 			}
-		}
 
+			/*Caso bluetooth perca comunicação */
+			if(!Tempo_3s)
+			{
+				lcdCommand(0x01);
+				lcd_gotoxy(1, 1);
+				lcd_print("DESCONECTADO");
+				_delay_ms(30);
+				while(1)
+				{
+					PORTC ^= (1<<LED_AZUL);
+					_delay_ms(400);
+					Motores(PARADO);
+				}
+			}
+		}
 
 #ifndef DEBUG
 #ifdef BLUE
@@ -196,16 +228,7 @@ int main(void) {
 /********************************************************************************/
 
 void Motor_Calculation(unsigned char Data) {
-	if ((Data >= 55) & (Data <= 120)) {
-		float Data_Float = (uint8_t) Data;
 
-		Velocidade_Default = Velocidade_Padrao * (Data_Float / 100);
-		Mudanca_Bruta = Mudanca_Bruta_Padrao * (Data_Float / 100);
-		Mudanca_Suave = Mudanca_Suave_Padrao * (Data_Float / 100);
-	}
-
-	else
-		return;
 }
 
 void Init() {
@@ -229,7 +252,10 @@ void Init() {
 	TCCR1A = 0; // NORMAL mode
 	TCNT1 = T1BOTTOM; // Load BOTTOM value
 	TIMSK1 = (1 << TOIE1); // Enable Ovf intrpt
-	TCCR1B = 1; // Start TC1 (TP=256)
+	TCCR1B = 1; // Start TC1
+	/*1->1
+	 * 2->8
+	 * 3->64*/
 	/*enable interrupt.*/
 	sei();
 #endif
@@ -247,8 +273,8 @@ void Init() {
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
 
 	/*LEDS*/
-	DDRC |= (1<<LED_AZUL);
-	DDRB |= (1<<LED_VERMELHO);
+	DDRC |= (1 << LED_AZUL);
+	DDRB |= (1 << LED_VERMELHO);
 
 	/*MOTORES*/
 	DDRB |= (1 << Motor_E);
@@ -310,7 +336,6 @@ void Calculo() {
 		Motores(DIREITA);
 	else if (!Sensor[4])
 		Motores(DIREITA_DIREITA);
-
 
 }
 /*OCR2A -> MOTOR ESQUERDA
