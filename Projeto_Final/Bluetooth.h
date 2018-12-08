@@ -23,10 +23,10 @@ void init_usart(void){
 
 	 /*Velocidade dupla*/
 	 UCSR0A= (1<<U2X0);
-	 // Ativar Rx, Tx e interrupção no Rx
+	 /* Ativar Rx, Tx e interrupção no Rx*/
 	 UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);
 
-;
+
 }
 
 /*Envia Codigo ascii para o bluetooth*/
