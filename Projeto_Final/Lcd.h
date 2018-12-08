@@ -1,9 +1,13 @@
 #ifndef LED
 #define LED
+#ifndef F_CPU
 #define F_CPU 16000000UL
+#endif
+
 
 #include <avr/io.h>
 #include <util/delay.h>
+#include <stdio.h>
 
 #define ctrl PORTD // We are using port B
 #define en PB5       // enable signal pin 2
@@ -18,6 +22,7 @@ void lcdData(unsigned char);
 void lcd_print( char *str);
 void lcd_gotoxy(unsigned char x, unsigned char y);
 
+static FILE mystdout = FDEV_SETUP_STREAM(lcdData, NULL, _FDEV_SETUP_WRITE);
 
 /*Separa 4 em 4 bits para enviar no modo 4bits*/
 void lcdCommand(unsigned char cmd_value) {
@@ -75,6 +80,8 @@ void lcd_print( char *str) { // store address value of the string in pointer *st
 void lcd_print_lcd(uint8_t Sensor[5]){
 
 	lcd_gotoxy(3,1);
+	printf("%d", Sensor[0]);
+/*
 	if(!Sensor[0])
 		lcd_print("1");
 	else if(Sensor[0])
@@ -103,6 +110,7 @@ void lcd_print_lcd(uint8_t Sensor[5]){
 		lcd_print("1");
 	else if(Sensor[4])
 		lcd_print("0");
+	*/
 	lcdCommand(0x0c);
 	_delay_us(50);
 	return;

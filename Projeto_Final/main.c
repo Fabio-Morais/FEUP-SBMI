@@ -1,4 +1,3 @@
-
 //#define DEBUG
 #define BLUE
 /*Bibliotecas padrao*/
@@ -14,6 +13,7 @@
 #ifndef DEBUG
 #include "Lcd.h"
 #include "Bluetooth.h"
+#include "Battery.h"
 #endif
 
 /*SENSORES*/
@@ -64,7 +64,7 @@
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
-volatile uint16_t Tempo_1ms, Tempo_3s, Tempo_Perdido; //Tempos
+volatile uint16_t Tempo_1ms, Tempo_3s, Tempo_Perdido, Tempo_Led; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
 volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
@@ -84,11 +84,6 @@ void Calculo();
 /*Envia para os motores os valores que a função Calculo fez*/
 void Motores(uint8_t Valid);
 
-/* Coloca na variavei Velocidade a escolha do bluetooth
- * Recebe valores entre 1 e 5
- * 3 é o valor padrão
- * */
-void Motor_Calculation(uint8_t Data);
 
 /*Imprime lcd | Acende luz azul*/
 void Modo_Run(void);
@@ -119,6 +114,8 @@ ISR(TIMER1_OVF_vect) {
 		Tempo_3s--;
 	if (Tempo_Perdido > 0)
 		Tempo_Perdido--;
+	if(Tempo_Led>0)
+		Tempo_Led--;
 }
 
 #ifdef BLUE
@@ -149,13 +146,15 @@ ISR(USART_RX_vect) {
 	}
 	/*******************************************/
 	/*CONTROLO MANUAL*/
-	else if ((RecByte >= 1) && (RecByte <= 3)) {
+	else if ((RecByte >= 1) && (RecByte <= 4)) {
 		if (RecByte == 1) //RECEBE DIREITA
 			Controlo_Manual = DIREITA_DIREITA;
 		else if (RecByte == 2) //RECEBE ESQUERDA
 			Controlo_Manual = ESQUERDA_ESQUERDA;
 		else if (RecByte == 3) //RECEBE FRENTE
-			Controlo_Manual = ESQUERDA_ESQUERDA;
+			Controlo_Manual = OK;
+		else if(RecByte == 4)
+			Controlo_Manual = REVERSE;
 	} else if (RecByte == 5 || (RecByte >= 11 && RecByte <= 14)) //RECEBE PARADO
 		Controlo_Manual = PARADO;
 	else if (RecByte == 40 || RecByte == 41)
@@ -192,7 +191,7 @@ int main(void) {
 	init_usart();
 #endif
 #endif
-
+	stdout = &mystdout;
 	lcd_init();
 
 	/*Inicia variaveis*/
@@ -202,21 +201,46 @@ int main(void) {
 	Robo_Perdido = 0;
 
 	while (1) {
-/*********************************************/
+
+		/*********************************************/
 		/*ANDA COM SENSORES*/
-/**********************************************/
+		/**********************************************/
 		if (Modo_Robo == MODO_AUTOMATICO) {
 			Controlo_Manual = -111;
 
-			Sensores();
+			Sensores(); // Coloca na varivel Sensores os valores ativos
 
-			if (Comando == RUN) {//Robo em andamento
 
-				Calculo();
+			if (Comando == RUN) { //Robo em andamento
+
+				Calculo(); // Toma açoes nos motores de acordo com sensores
 
 				if (Robo_Perdido) { //Não está na pista
-					if (!Tempo_Perdido) {//Está perdido | Fica parado
-						Modo_Perdido();
+
+					_delay_ms(100);
+
+					Motores(REVERSE);
+
+					if (!Tempo_Perdido) { //Está perdido | Fica parado
+						uint8_t Flag_Perdido=0;
+						while (1) {
+							if(!Flag_Perdido)
+							{
+								Modo_Perdido();
+								Flag_Perdido=1;
+								Tempo_Led=100; //150ms de tempo
+							}
+							if(!Tempo_Led){
+								PORTB ^= (1 << LED_VERMELHO);
+								Tempo_Led=100;
+							}
+							Sensores(); // Coloca na varivel Sensores os valores ativos
+							if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]) {
+								Robo_Perdido = 0;
+								lcd_init();
+								break;
+							}
+						}
 					}
 				} else { // Está tudo OK
 
@@ -224,7 +248,7 @@ int main(void) {
 				}
 
 			} else if (Comando == STOP) { // Robo parado
-
+				Modo_Stop();
 			}
 
 			lcd_print_lcd(Sensor); //imprime informaçao dos sensores
@@ -234,14 +258,14 @@ int main(void) {
 #endif
 #endif
 		}
-/************************************************************/
+		/************************************************************/
 		/*ANDA POR CONTROLO REMOTO*/
-/**************************************************************/
+		/**************************************************************/
 		else if (Modo_Robo == MODO_MANUAL) {
 
 			/*Faz 1 vez no inicio*/
 			if (!Flag_Ciclo) {
-			 Incializa_Manual(); // Imprime lcd | Acende luz
+				Incializa_Manual(); // Imprime lcd | Acende luz
 			}
 
 			if (Controlo_Manual != -111) {
@@ -275,9 +299,6 @@ int main(void) {
 
 /********************************************************************************/
 
-void Motor_Calculation(unsigned char Data) {
-
-}
 
 void Init() {
 
@@ -372,10 +393,12 @@ void Sensores() {
 
 void Calculo() {
 
-	if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]) {
-		Motores(REVERSE);
+	if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]
+			&& !Robo_Perdido) {
 		Tempo_Perdido = 2000;
 		Robo_Perdido = 1;
+		Motores(PARADO);
+
 	} else if (!Sensor[2]) {
 		Motores(OK);
 		Robo_Perdido = 0;
@@ -431,17 +454,16 @@ void Motores(uint8_t Valid) {
 		break;
 
 	case REVERSE:
-		OCR2A = 255;
-		OCR2B = 255;
-		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
 		OCR2A = 0;
 		OCR2B = 0;
+		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
+
 		break;
 
 	case PARADO:
-		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
-		OCR2A = 0;
-		OCR2B = 0;
+		OCR2A = 255;
+		OCR2B = 255;
+		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
 		break;
 
 	default:
@@ -453,9 +475,7 @@ void Motores(uint8_t Valid) {
 
 }
 
-
-
-void Modo_Run(void){
+void Modo_Run(void) {
 
 	PORTC |= (1 << LED_AZUL);
 	PORTB &= ~(1 << LED_VERMELHO);
@@ -463,7 +483,7 @@ void Modo_Run(void){
 	lcd_print("RUN ");
 }
 
-void Modo_Stop(void){
+void Modo_Stop(void) {
 
 	Motores(PARADO);
 	PORTB ^= (1 << LED_VERMELHO);
@@ -472,16 +492,18 @@ void Modo_Stop(void){
 	lcd_print("STOP");
 }
 
-void Modo_Perdido(void){
+void Modo_Perdido(void) {
 
 	Motores(PARADO);
-	PORTB ^= (1 << LED_VERMELHO);
+	PORTC &= ~(1 << LED_AZUL);
 	lcdCommand(0x01);
-	lcd_gotoxy(1, 2);
+	lcd_gotoxy(1, 1);
 	lcd_print("ROBO PERDIDO");
+	lcd_gotoxy(1, 2);
+	lcd_print("Coloque na pista");
 }
 
-void Incializa_Manual(void){
+void Incializa_Manual(void) {
 
 	lcdCommand(0x01);
 	_delay_ms(20);
