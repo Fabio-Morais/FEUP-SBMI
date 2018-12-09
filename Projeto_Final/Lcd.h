@@ -80,37 +80,7 @@ void lcd_print( char *str) { // store address value of the string in pointer *st
 void lcd_print_lcd(uint8_t Sensor[5]){
 
 	lcd_gotoxy(3,1);
-	printf("%d", Sensor[0]);
-/*
-	if(!Sensor[0])
-		lcd_print("1");
-	else if(Sensor[0])
-		lcd_print("0");
-	lcd_gotoxy(5,1);
-
-	if(!Sensor[1])
-		lcd_print("1");
-	else if(Sensor[1])
-		lcd_print("0");
-	lcd_gotoxy(8,1);
-
-	if(!Sensor[2])
-		lcd_print("1");
-	else if(Sensor[2])
-		lcd_print("0");
-	lcd_gotoxy(11,1);
-
-	if(!Sensor[3])
-		lcd_print("1");
-	else if(Sensor[3])
-		lcd_print("0");
-
-	lcd_gotoxy(13,1);
-	if(!Sensor[4])
-		lcd_print("1");
-	else if(Sensor[4])
-		lcd_print("0");
-	*/
+	printf("%d %d  %d  %d %d", Sensor[0], Sensor[1], Sensor[2], Sensor[3], Sensor[4]);
 	lcdCommand(0x0c);
 	_delay_us(50);
 	return;

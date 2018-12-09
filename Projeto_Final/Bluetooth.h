@@ -3,7 +3,6 @@
 #ifndef F_CPU
 #define F_CPU 16000000UL
 #endif
-#include <avr/io.h>
 #include <avr/interrupt.h>
 
 /*Baud rate do hc-06*/
@@ -81,7 +80,7 @@ void Send_Sensores(uint8_t Sensor[5]){
 			{
 		Send_Data(70);
 		aux=0;
-		_delay_ms(20);
+		_delay_ms(3);
 			}
 
 return;
