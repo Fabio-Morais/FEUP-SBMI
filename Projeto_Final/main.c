@@ -1,20 +1,28 @@
-//#define DEBUG
-#define BLUE
+/*******************************************
+ *  main.c
+ *  Created on: 24/11/2018 (eclipse, avr-gcc)
+ *      Author: up201504257@fe.up.pt
+ *      		up201708979@fe.up.pt
+ *
+ *	Objetivo: Implementar um robo segue linha, que comunica por bluetooth com uma app que desenvolvemos
+ *	onde envia informação relativa aos sensores, nivel de bateria, se está "perdido" da pista ou não
+ *	podemos mudar a velocidade, entre diversas outras informações.
+ *	É possivel tambem com a nossa app mudar para o Modo Manual, onde podemos controlar o robo.
+ *	Para alem disso, temos um comando IR que podemos dar o START e STOP, como mudar a sua velocidade
+ *
+ *
+ *	Solução:
+ *******************************************/
+
 /*Bibliotecas padrao*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
 /*Ficheiros de bilbiotecas*/
-#ifdef DEBUG
-#include "serial_printf.h"
-#endif
-
-#ifndef DEBUG
 #include "Lcd.h"
 #include "Bluetooth.h"
 #include "Battery.h"
-#endif
 
 /*SENSORES*/
 #define Sensor_OUT5 PC5
@@ -35,19 +43,28 @@
 
 /*VALIDAÇÃO*/
 #define OK 20
-#define ESQUERDA_ESQUERDA 21
-#define ESQUERDA 22
-#define DIREITA_DIREITA 23
-#define DIREITA 24
-#define PARADO 25
-#define REVERSE 26
+/*Esquerda*/
+#define ESQUERDA_BRUTA 21
+#define ESQUERDA_SUAVE 22
+#define ESQUERDA_MEDIA 23
+#define ESQUERDA_MEDIA_MAIS 24
+/*Direita*/
+#define DIREITA_BRUTA 25
+#define DIREITA_MEDIA 26
+#define DIREITA_MEDIA_MAIS 27
+#define DIREITA_SUAVE 28
+/*Especiais*/
+#define PARADO 29 //Trava
+#define REVERSE 30 //Marcha atrás
 
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
-#define Velocidade_Padrao 230
-#define Mudanca_Suave_Padrao 10
-#define Mudanca_Bruta_Padrao 160
+#define Velocidade_Padrao 220
+#define Mudanca_Suave_Padrao 15
+#define Mudanca_Media_Padrao 30
+#define Mudanca_Media_Mais_Padrao 60
+#define Mudanca_Bruta_Padrao 200
 
 /*TIMERS*/
 #define T1BOTTOM 65536-16000
@@ -63,7 +80,8 @@
 
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
-volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Bruta; //Velocidades para manipular
+volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
+		Mudanca_Media_mais, Mudanca_Bruta; //Velocidades para manipular
 volatile uint16_t Tempo_1ms, Tempo_3s, Tempo_Perdido, Tempo_Led; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
@@ -71,6 +89,9 @@ volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo 
 volatile uint8_t Flag_Ciclo; //Para correr no primeiro ciclo
 uint8_t Robo_Perdido; //Flag que diz se robo está perdido ou não
 uint8_t Volta; //Numero da volta
+uint8_t aux;//flag do rising edge para contar o numero de voltas
+
+
 /********************************************************************************/
 
 /*Fazer a inicialização das variaveis*/
@@ -98,10 +119,9 @@ void Modo_Perdido(void);
 /*Acende luz azul | Imprime Lcd*/
 void Incializa_Manual(void);
 
-/*Modo debug*/
-#ifdef DEBUG
-void Debug_Printf();
-#endif
+/*Conta volta e envia para bluetooth e imprime no lcd*/
+void Conta_Volta(void);
+
 
 /********************************************************************************/
 
@@ -119,7 +139,6 @@ ISR(TIMER1_OVF_vect) {
 		Tempo_Led--;
 }
 
-#ifdef BLUE
 /*RECEBE DADOS BLUETOOTH*/
 ISR(USART_RX_vect) {
 
@@ -149,9 +168,9 @@ ISR(USART_RX_vect) {
 	/*CONTROLO MANUAL*/
 	else if ((RecByte >= 1) && (RecByte <= 4)) {
 		if (RecByte == 1) //RECEBE DIREITA
-			Controlo_Manual = DIREITA_DIREITA;
+			Controlo_Manual = DIREITA_BRUTA;
 		else if (RecByte == 2) //RECEBE ESQUERDA
-			Controlo_Manual = ESQUERDA_ESQUERDA;
+			Controlo_Manual = ESQUERDA_BRUTA;
 		else if (RecByte == 3) //RECEBE FRENTE
 			Controlo_Manual = OK;
 		else if(RecByte == 4)
@@ -179,7 +198,6 @@ ISR(USART_RX_vect) {
 	Tempo_3s = 2000;
 }
 
-#endif
 
 /*********************************************************************************/
 
@@ -187,22 +205,20 @@ int main(void) {
 
 	Init();
 
-#ifndef DEBUG
-#ifdef BLUE
+
 	init_usart();
-#endif
-#endif
+
 	stdout = &mystdout;
 	lcd_init();
 
 	/*Inicia variaveis*/
-	Comando = STOP;
+	Comando = RUN;
 	Modo_Robo = MODO_AUTOMATICO;
 	Flag_Ciclo = 0;
 	Robo_Perdido = 0;
 
 	while (1) {
-
+		Send_Data(122);
 		/*********************************************/
 		/*ANDA COM SENSORES*/
 		/**********************************************/
@@ -256,11 +272,10 @@ int main(void) {
 			}
 
 			lcd_print_lcd(Sensor); //imprime informaçao dos sensores
-#ifndef DEBUG
-#ifdef BLUE
+			Conta_Volta(); //Conta numero de voltas e imprime
+
 			Send_Sensores(Sensor); // Envia Sensores via bluetooth
-#endif
-#endif
+
 		}
 		/************************************************************/
 		/*ANDA POR CONTROLO REMOTO*/
@@ -295,10 +310,7 @@ int main(void) {
 
 		}
 
-#ifdef DEBUG
-		Debug_Printf();
-		_delay_ms(1000);
-#endif
+
 
 	}
 }
@@ -319,7 +331,6 @@ void Init() {
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 2;
 
-#ifdef BLUE
 	/*Timer 1*/
 	TCCR1B = 0; // Stop TC1
 	TIFR1 = (7 << TOV1) // Clear all
@@ -333,12 +344,9 @@ void Init() {
 	 * 3->64*/
 	/*enable interrupt.*/
 	sei();
-#endif
 
-#ifdef DEBUG
-	printf_init();
-	printf("Robot\n");
-#endif
+
+
 
 	/*SENSORES COM PULL UP*/
 	DDRC &= ~((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
@@ -361,7 +369,10 @@ void Init() {
 	Velocidade_Default = Velocidade_Padrao;
 	Mudanca_Bruta = Mudanca_Bruta_Padrao;
 	Mudanca_Suave = Mudanca_Suave_Padrao;
+	Mudanca_Media = Mudanca_Media_Padrao;
+	Mudanca_Media_mais = Mudanca_Media_Mais_Padrao;
 
+	/*Colocar numero de voltas a 1*/
 	Volta=1;
 }
 
@@ -401,6 +412,13 @@ void Sensores() {
 
 void Calculo() {
 
+	if(Robo_Perdido && (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]))
+	{
+		Motores(PARADO);
+		_delay_ms(10);
+		Robo_Perdido=0;
+	}
+
 	if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]
 			&& !Robo_Perdido) {
 		Tempo_Perdido = 2000;
@@ -414,22 +432,22 @@ void Calculo() {
 	}
 	/*01000*/
 	else if (!Sensor[1] && Sensor[0] && Sensor[2] && Sensor[3] && Sensor[4] ) {
-		Motores(ESQUERDA);
+		Motores(ESQUERDA_SUAVE);
 		Robo_Perdido = 0;
 	}
 	/*10000*/
 	else if (!Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]) {
-		Motores(ESQUERDA_ESQUERDA);
+		Motores(ESQUERDA_BRUTA);
 		Robo_Perdido = 0;
 	}
 	/*00010*/
 	else if (!Sensor[3] && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[4]) {
-		Motores(DIREITA);
+		Motores(DIREITA_SUAVE);
 		Robo_Perdido = 0;
 	}
 	/*00001*/
 	else if (!Sensor[4] && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3]) {
-		Motores(DIREITA_DIREITA);
+		Motores(DIREITA_BRUTA);
 		Robo_Perdido = 0;
 	}
 
@@ -447,25 +465,25 @@ void Motores(uint8_t Valid) {
 		OCR2B = Velocidade_Default;
 		break;
 
-	case ESQUERDA_ESQUERDA:
+	case ESQUERDA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default - Mudanca_Bruta;
 		OCR2B = Velocidade_Default;
 		break;
 
-	case ESQUERDA:
+	case ESQUERDA_SUAVE:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default - Mudanca_Suave;
 		OCR2B = Velocidade_Default;
 		break;
 
-	case DIREITA_DIREITA:
+	case DIREITA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default;
 		OCR2B = Velocidade_Default - Mudanca_Bruta;
 		break;
 
-	case DIREITA:
+	case DIREITA_SUAVE:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default;
 		OCR2B = Velocidade_Default - Mudanca_Suave;
@@ -498,7 +516,9 @@ void Modo_Run(void) {
 	PORTC |= (1 << LED_AZUL);
 	PORTB &= ~(1 << LED_VERMELHO);
 	lcd_gotoxy(1, 2);
-	printf("RUN   Volta: %d", Volta);
+	printf("RUN");
+	Send_Data(125); //Envia que está em run
+	_delay_ms(2);
 }
 
 void Modo_Stop(void) {
@@ -507,7 +527,9 @@ void Modo_Stop(void) {
 	PORTB ^= (1 << LED_VERMELHO);
 	PORTC &= ~(1 << LED_AZUL);
 	lcd_gotoxy(1, 2);
-	printf("STOP   Volta: %d", Volta);
+	printf("STOP");
+	Send_Data(126); //Envia que está em STOP
+	_delay_ms(2);
 }
 
 void Modo_Perdido(void) {
@@ -532,8 +554,25 @@ void Incializa_Manual(void) {
 	PORTB &= ~(1 << LED_VERMELHO);
 }
 
-#ifdef DEBUG
-void Debug_Printf() {
-	printf("%d %d %d %d %d\nocra:%d  ocrB:%d->%d\n\n\n", Sensor[0], Sensor[1], Sensor[2], Sensor[3],Sensor[4], OCR2A, OCR2B, flag);
+void Conta_Volta(void) {
+
+
+	/*Conta a volta */
+	if (!Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4])
+		aux = 1;
+	else if ((aux == 1) && (Sensor[0] || Sensor[4]))
+		aux = 2;
+	else if (aux == 2) {
+		Send_Data(70);
+		aux = 0;
+		_delay_ms(3);
+		Volta++;
+	}
+
+	lcd_gotoxy(6, 2);
+	printf("Volta: %d", Volta);
+
+
+
 }
-#endif
+
