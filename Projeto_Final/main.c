@@ -73,6 +73,7 @@
 /*MODO DE OPERAÇÃO*/
 #define MODO_MANUAL 40
 #define MODO_AUTOMATICO 41
+#define MODO_COMPETICAO 42
 
 /*ESTADO ROBO*/
 #define RUN 150
@@ -82,7 +83,7 @@
 uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
 		Mudanca_Media_mais, Mudanca_Bruta; //Velocidades para manipular
-volatile uint16_t Tempo_1ms, Tempo_3s, Tempo_Perdido, Tempo_Led; //Tempos
+volatile uint16_t Tempo_1ms, Tempo_3s, Tempo_Perdido, Tempo_Led, Tempo_Send_Sensores; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
 volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
@@ -137,6 +138,8 @@ ISR(TIMER1_OVF_vect) {
 		Tempo_Perdido--;
 	if(Tempo_Led>0)
 		Tempo_Led--;
+	if(Tempo_Send_Sensores>0)
+		Tempo_Send_Sensores--;
 }
 
 /*RECEBE DADOS BLUETOOTH*/
@@ -205,7 +208,7 @@ int main(void) {
 
 	Init();
 
-
+	_delay_ms(500); // Para chegar a tensao estavel
 	init_usart();
 
 	stdout = &mystdout;
@@ -218,7 +221,7 @@ int main(void) {
 	Robo_Perdido = 0;
 
 	while (1) {
-		Send_Data(122);
+
 		/*********************************************/
 		/*ANDA COM SENSORES*/
 		/**********************************************/
@@ -274,7 +277,8 @@ int main(void) {
 			lcd_print_lcd(Sensor); //imprime informaçao dos sensores
 			Conta_Volta(); //Conta numero de voltas e imprime
 
-			Send_Sensores(Sensor); // Envia Sensores via bluetooth
+				Send_Sensores(Sensor); // Envia Sensores via bluetooth
+
 
 		}
 		/************************************************************/
@@ -308,6 +312,15 @@ int main(void) {
 				}
 			}
 
+		}
+	/************************************************************/
+		/*ANDA COMPETIÇAO*/
+	/**************************************************************/
+		else if (Modo_Robo == MODO_COMPETICAO) {
+			while (1) {
+				Sensores(); // Coloca na varivel Sensores os valores ativos
+				Calculo();
+			}
 		}
 
 
@@ -374,6 +387,7 @@ void Init() {
 
 	/*Colocar numero de voltas a 1*/
 	Volta=1;
+
 }
 
 /* [ OUT1  OUT2  OUT3  OUT4  OUT5 ]
@@ -412,13 +426,14 @@ void Sensores() {
 
 void Calculo() {
 
+	/*Estava perdido e encontra a linha*/
 	if(Robo_Perdido && (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]))
 	{
 		Motores(PARADO);
 		_delay_ms(10);
 		Robo_Perdido=0;
 	}
-
+	/*00000*/
 	if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]
 			&& !Robo_Perdido) {
 		Tempo_Perdido = 2000;
@@ -432,7 +447,7 @@ void Calculo() {
 	}
 	/*01000*/
 	else if (!Sensor[1] && Sensor[0] && Sensor[2] && Sensor[3] && Sensor[4] ) {
-		Motores(ESQUERDA_SUAVE);
+		Motores(ESQUERDA_MEDIA);
 		Robo_Perdido = 0;
 	}
 	/*10000*/
@@ -442,12 +457,33 @@ void Calculo() {
 	}
 	/*00010*/
 	else if (!Sensor[3] && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[4]) {
-		Motores(DIREITA_SUAVE);
+		Motores(DIREITA_MEDIA);
 		Robo_Perdido = 0;
 	}
 	/*00001*/
 	else if (!Sensor[4] && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3]) {
 		Motores(DIREITA_BRUTA);
+		Robo_Perdido = 0;
+	}
+	/*00110*/
+	else if(!Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && Sensor[4])
+	{
+		Motores(DIREITA_SUAVE);
+		Robo_Perdido = 0;
+	}
+	/*00011*/
+	else if(Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && !Sensor[4]){
+		Motores(DIREITA_MEDIA_MAIS);
+		Robo_Perdido = 0;
+	}
+	/*01100*/
+	else if(!Sensor[2] && Sensor[0] && !Sensor[1] && !Sensor[3] && Sensor[4]){
+		Motores(ESQUERDA_SUAVE);
+		Robo_Perdido = 0;
+	}
+	/*11000*/
+	else if(Sensor[2] && !Sensor[0] && !Sensor[1] && !Sensor[3] && Sensor[4]){
+		Motores(ESQUERDA_MEDIA_MAIS);
 		Robo_Perdido = 0;
 	}
 
@@ -465,6 +501,7 @@ void Motores(uint8_t Valid) {
 		OCR2B = Velocidade_Default;
 		break;
 
+		/**********ESQUERDA******************/
 	case ESQUERDA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default - Mudanca_Bruta;
@@ -477,6 +514,19 @@ void Motores(uint8_t Valid) {
 		OCR2B = Velocidade_Default;
 		break;
 
+	case ESQUERDA_MEDIA:
+		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
+		OCR2A = Velocidade_Default - Mudanca_Media;
+		OCR2B = Velocidade_Default;
+		break;
+
+	case ESQUERDA_MEDIA_MAIS:
+		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
+		OCR2A = Velocidade_Default - Mudanca_Media_mais;
+		OCR2B = Velocidade_Default;
+		break;
+
+		/**********DIREITA******************/
 	case DIREITA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = Velocidade_Default;
@@ -489,11 +539,23 @@ void Motores(uint8_t Valid) {
 		OCR2B = Velocidade_Default - Mudanca_Suave;
 		break;
 
+	case DIREITA_MEDIA:
+		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
+		OCR2A = Velocidade_Default;
+		OCR2B = Velocidade_Default - Mudanca_Media;
+		break;
+
+	case DIREITA_MEDIA_MAIS:
+		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
+		OCR2A = Velocidade_Default;
+		OCR2B = Velocidade_Default - Mudanca_Media_mais;
+		break;
+
+		/**********ESPECIAIS******************/
 	case REVERSE:
 		OCR2A = 0;
 		OCR2B = 0;
 		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
-
 		break;
 
 	case PARADO:
