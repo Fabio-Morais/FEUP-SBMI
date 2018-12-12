@@ -46,31 +46,31 @@ void Send_Sensores(uint8_t Sensor[5]){
 		Send_Data(1);
 	else
 		Send_Data(11);
-	_delay_ms(30);
+	_delay_ms(3);
 
 	if(!Sensor[1])
 		Send_Data(2);
 	else
 		Send_Data(12);
-	_delay_ms(30);
+	_delay_ms(3);
 
 	if(!Sensor[2])
 		Send_Data(3);
 	else
 		Send_Data(13);
-	_delay_ms(30);
+	_delay_ms(3);
 
 	if(!Sensor[3])
 		Send_Data(4);
 	else
 		Send_Data(14);
-	_delay_ms(30);
+	_delay_ms(3);
 
 	if(!Sensor[4])
 		Send_Data(5);
 	else
 		Send_Data(15);
-	_delay_ms(30);
+	_delay_ms(3);
 
 
 return;

@@ -101,22 +101,26 @@ void lcd_data(unsigned char data) {
 
    PORTB |= (1 << rs);  // RS = 1 for data
    PORTB |= (1 << en);  // EN = 1 for High to Low pulse
-  _delay_ms(2);
-  ctrl = data;
+  _delay_ms(1);
+  ctrl |= data;
 	_delay_us(10);
   PORTB &= ~(1 << en); // EN = 0 for High to Low Pulse
   _delay_ms(2);
+  ctrl &= ~data;
+
   return;
 }
 void lcd_command(char cmd) {
 
   PORTB  &= ~(1 << rs); // RS = 0 for command
   PORTB |= (1 << en);  // EN = 1 for High to Low pulse
-  _delay_ms(2);
-  ctrl = cmd;
+  _delay_ms(1);
+  ctrl |= cmd;
 	_delay_us(10);
   PORTB &= ~(1 << en); // EN = 0 for High to Low pulse
   _delay_ms(2);
+  ctrl &= ~cmd;
+
 
 
   return;

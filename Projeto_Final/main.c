@@ -38,7 +38,7 @@
 #define Motor_D_T PB1
 
 /*LEDS*/
-#define LED_AZUL PC0
+#define LED_AZUL PD2
 #define LED_VERMELHO PB0
 
 /*VALIDAÇÃO*/
@@ -219,10 +219,26 @@ int main(void) {
 	lcd_init();
 
 	/*Inicia variaveis*/
-	Comando = RUN;
+	Comando = STOP;
 	Modo_Robo = MODO_AUTOMATICO;
 	Flag_Ciclo = 0;
 	Robo_Perdido = 0;
+
+	Tempo_Send_Sensores=10;
+	unsigned int V=0, new, old;
+	init_adc();
+	while(1){
+		new=read_adc(0);
+		if(new != old){
+		old=new;
+		V= (double) VREF * new * 1000/1024;
+		lcd_gotoxy(4, 1);
+		_delay_ms(2);
+		printf("%dmV", V);
+
+		}
+		_delay_ms(1000);
+	}
 
 	while (1) {
 
@@ -238,7 +254,7 @@ int main(void) {
 
 				Calculo(); // Toma açoes nos motores de acordo com sensores
 
-				if (Robo_Perdido) { // Está tudo OK
+				if (!Robo_Perdido) { // Está tudo OK
 
 					Modo_Run();
 				}
@@ -283,9 +299,14 @@ int main(void) {
 
 			Conta_Volta(); //Conta numero de voltas e imprime
 
-			lcd_print_lcd();// Envia dados para LCD
 
-			Send_Sensores(Sensor); // Envia Sensores via bluetooth
+			if(!Tempo_Send_Sensores)
+			{
+				lcd_print_lcd();// Envia dados para LCD
+
+				Send_Sensores(Sensor); // Envia Sensores via bluetooth
+				Tempo_Send_Sensores=10;
+			}
 
 		}
 		/************************************************************/
@@ -317,7 +338,7 @@ int main(void) {
 				Tempo_Led=400;
 				while (1) {
 					if(!Tempo_Led){
-					PORTC ^= (1 << LED_AZUL);
+					PORTD ^= (1 << LED_AZUL);
 					Tempo_Led=400;
 					}
 					Motores(PARADO);
@@ -336,7 +357,25 @@ int main(void) {
 		else if (Modo_Robo == MODO_COMPETICAO) {
 			while (1) {
 				Sensores(); // Coloca na varivel Sensores os valores ativos
+
+				if(!Robo_Perdido)
+				{
 				Calculo();
+				}
+				else if(Robo_Perdido && !Tempo_Perdido)
+				{
+
+						Motores(PARADO);
+
+						PORTB ^=(1<<LED_VERMELHO);
+						if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4])
+							{
+							Robo_Perdido = 0;
+							PORTB &= ~(1<<LED_VERMELHO);
+
+							}
+
+				}
 			}
 		}
 
@@ -387,7 +426,7 @@ void Init() {
 			| (1 << Sensor_OUT2) | (1 << Sensor_OUT1));
 
 	/*LEDS*/
-	DDRC |= (1 << LED_AZUL);
+	DDRD |= (1 << LED_AZUL);
 	DDRB |= (1 << LED_VERMELHO);
 
 	/*MOTORES*/
@@ -445,15 +484,22 @@ void Sensores() {
 void Calculo() {
 
 	/*Estava perdido e encontra a linha*/
-	if(Robo_Perdido && (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]))
+	if(Robo_Perdido && MODO_AUTOMATICO && (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]))
 	{
-		Motores(PARADO);
+		Motores(TRAVA);
 		_delay_ms(10);
 		Robo_Perdido=0;
 	}
+
+	if(!Robo_Perdido && MODO_COMPETICAO && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4])
+		{
+		Tempo_Perdido=3000;
+		Robo_Perdido=1;
+		}
+
 	/*00000*/
-	if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]
-			&& !Robo_Perdido) {
+	else if (Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]
+			&& !Robo_Perdido && MODO_AUTOMATICO) {
 		Tempo_Perdido = 2000;
 		Robo_Perdido = 1;
 		Motores(PARADO);
@@ -577,6 +623,12 @@ void Motores(uint8_t Valid) {
 		break;
 
 	case PARADO:
+		OCR2A = 0;
+		OCR2B = 0;
+		PORTB &= ~(1 << Motor_E_T) | (1 << Motor_D_T);
+		break;
+
+	case TRAVA:
 		OCR2A = 255;
 		OCR2B = 255;
 		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
@@ -593,8 +645,9 @@ void Motores(uint8_t Valid) {
 
 void Modo_Run(void) {
 
-	PORTC |= (1 << LED_AZUL);
+	PORTC = 0;
 	PORTB &= ~(1 << LED_VERMELHO);
+	PORTD |= (1 << LED_AZUL);
 	Send_Data(125); //Envia que está em run
 	_delay_ms(2);
 }
@@ -603,7 +656,7 @@ void Modo_Stop(void) {
 
 	Motores(PARADO);
 	PORTB ^= (1 << LED_VERMELHO);
-	PORTC &= ~(1 << LED_AZUL);
+	PORTD &= ~(1 << LED_AZUL);
 	Send_Data(126); //Envia que está em STOP
 	_delay_ms(2);
 }
@@ -611,7 +664,7 @@ void Modo_Stop(void) {
 void Modo_Perdido(void) {
 
 	Motores(PARADO);
-	PORTC &= ~(1 << LED_AZUL);
+	PORTD &= ~(1 << LED_AZUL);
 	lcdCommand(0x01);
 	lcd_gotoxy(1, 1);
 	printf("ROBO PERDIDO");
@@ -627,7 +680,7 @@ void Modo_Perdido(void) {
 void Incializa_Manual(void) {
 
 	Flag_Ciclo = 1;
-	PORTC |= (1 << LED_AZUL);
+	PORTD |= (1 << LED_AZUL);
 	PORTB &= ~(1 << LED_VERMELHO);
 	lcdCommand(0x01);
 	_delay_ms(20);
@@ -699,3 +752,6 @@ void lcd_print_lcd() {
 
 	return;
 }
+
+
+
