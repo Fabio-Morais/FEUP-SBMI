@@ -54,17 +54,18 @@
 #define DIREITA_MEDIA_MAIS 27
 #define DIREITA_SUAVE 28
 /*Especiais*/
-#define PARADO 29 //Trava
+#define PARADO 29 //Parado
 #define REVERSE 30 //Marcha atrás
+#define TRAVA 31 //Trava
 
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
-#define Velocidade_Padrao 220
+#define Velocidade_Padrao 190
 #define Mudanca_Suave_Padrao 15
 #define Mudanca_Media_Padrao 30
 #define Mudanca_Media_Mais_Padrao 60
-#define Mudanca_Bruta_Padrao 200
+#define Mudanca_Bruta_Padrao 190
 
 /*TIMERS*/
 #define T1BOTTOM 65536-16000
@@ -91,6 +92,7 @@ volatile uint8_t Flag_Ciclo; //Para correr no primeiro ciclo
 uint8_t Robo_Perdido; //Flag que diz se robo está perdido ou não
 uint8_t Volta; //Numero da volta
 uint8_t aux;//flag do rising edge para contar o numero de voltas
+uint8_t Flag_Perdido; //Quando está perdido apenas imprime 1 vez
 
 
 /********************************************************************************/
@@ -123,6 +125,8 @@ void Incializa_Manual(void);
 /*Conta volta e envia para bluetooth e imprime no lcd*/
 void Conta_Volta(void);
 
+/*Imprime dados LCD*/
+void lcd_print_lcd();
 
 /********************************************************************************/
 
@@ -226,7 +230,7 @@ int main(void) {
 		/*ANDA COM SENSORES*/
 		/**********************************************/
 		if (Modo_Robo == MODO_AUTOMATICO) {
-			Controlo_Manual = -111;
+			Controlo_Manual = MODO_AUTOMATICO;
 
 			Sensores(); // Coloca na varivel Sensores os valores ativos
 
@@ -234,23 +238,29 @@ int main(void) {
 
 				Calculo(); // Toma açoes nos motores de acordo com sensores
 
-				if (Robo_Perdido) { //Não está na pista
+				if (Robo_Perdido) { // Está tudo OK
 
-					_delay_ms(100);
+					Modo_Run();
+				}
+
+				/****Não está na pista*****/
+				else if (Robo_Perdido) {
+
+					_delay_ms(50);
 
 					Motores(REVERSE);
 
 					if (!Tempo_Perdido) { //Está perdido | Fica parado
-						uint8_t Flag_Perdido=0;
+						Flag_Perdido = 0;
 						while (1) {
+
+							/*Executa apenas 1 vez*/
 							if(!Flag_Perdido)
 							{
 								Modo_Perdido();
-								Flag_Perdido=1;
-								Tempo_Led=100; //150ms de tempo
-								Send_Data(122); // envia que ficou perdido
-								_delay_ms(2);
+
 							}
+							/*Pisca LED*/
 							if(!Tempo_Led){
 								PORTB ^= (1 << LED_VERMELHO);
 								Tempo_Led=100;
@@ -265,20 +275,17 @@ int main(void) {
 							}
 						}
 					}
-				} else { // Está tudo OK
-
-					Modo_Run();
 				}
-
 			} else if (Comando == STOP) { // Robo parado
 				Modo_Stop();
 			}
 
-			lcd_print_lcd(Sensor); //imprime informaçao dos sensores
+
 			Conta_Volta(); //Conta numero de voltas e imprime
 
-				Send_Sensores(Sensor); // Envia Sensores via bluetooth
+			lcd_print_lcd();// Envia dados para LCD
 
+			Send_Sensores(Sensor); // Envia Sensores via bluetooth
 
 		}
 		/************************************************************/
@@ -291,7 +298,7 @@ int main(void) {
 				Incializa_Manual(); // Imprime lcd | Acende luz
 			}
 
-			if (Controlo_Manual != -111) {
+			if (Controlo_Manual != MODO_AUTOMATICO) {
 				Motores(Controlo_Manual);
 				_delay_us(150);
 
@@ -301,14 +308,24 @@ int main(void) {
 			if (!Tempo_3s) {
 				lcdCommand(0x01);
 				lcd_gotoxy(1, 1);
+				printf("********************");
+				lcd_gotoxy(5, 2);
 				lcd_print("DESCONECTADO");
+				lcd_gotoxy(1, 3);
+				printf("********************");
 				_delay_ms(30);
+				Tempo_Led=400;
 				while (1) {
+					if(!Tempo_Led){
 					PORTC ^= (1 << LED_AZUL);
-					_delay_ms(400);
+					Tempo_Led=400;
+					}
 					Motores(PARADO);
 					if(Tempo_3s) //Caso receba algum valor via bluetooth, o tempo dá reset
+					{
+						Flag_Ciclo=0;
 						break;
+					}
 				}
 			}
 
@@ -322,6 +339,7 @@ int main(void) {
 				Calculo();
 			}
 		}
+
 
 
 
@@ -577,8 +595,6 @@ void Modo_Run(void) {
 
 	PORTC |= (1 << LED_AZUL);
 	PORTB &= ~(1 << LED_VERMELHO);
-	lcd_gotoxy(1, 2);
-	printf("RUN");
 	Send_Data(125); //Envia que está em run
 	_delay_ms(2);
 }
@@ -588,8 +604,6 @@ void Modo_Stop(void) {
 	Motores(PARADO);
 	PORTB ^= (1 << LED_VERMELHO);
 	PORTC &= ~(1 << LED_AZUL);
-	lcd_gotoxy(1, 2);
-	printf("STOP");
 	Send_Data(126); //Envia que está em STOP
 	_delay_ms(2);
 }
@@ -603,17 +617,27 @@ void Modo_Perdido(void) {
 	printf("ROBO PERDIDO");
 	lcd_gotoxy(1, 2);
 	printf("Coloque na pista");
+	Flag_Perdido=1;
+	Tempo_Led=100; //150ms de tempo
+	Send_Data(122); // envia que ficou perdido
+	_delay_ms(2);
+
 }
 
 void Incializa_Manual(void) {
 
-	lcdCommand(0x01);
-	_delay_ms(20);
-	lcd_gotoxy(1, 1);
-	printf("CONECTADO");
 	Flag_Ciclo = 1;
 	PORTC |= (1 << LED_AZUL);
 	PORTB &= ~(1 << LED_VERMELHO);
+	lcdCommand(0x01);
+	_delay_ms(20);
+	lcd_gotoxy(1, 1);
+	printf("********************");
+	lcd_gotoxy(5, 2);
+	printf("CONECTADO");
+	lcd_gotoxy(1, 3);
+	printf("********************");
+
 }
 
 void Conta_Volta(void) {
@@ -631,10 +655,47 @@ void Conta_Volta(void) {
 		Volta++;
 	}
 
-	lcd_gotoxy(6, 2);
-	printf("Volta: %d", Volta);
 
 
 
 }
 
+void lcd_print_lcd() {
+
+
+	if (Modo_Robo == MODO_AUTOMATICO) {
+		lcd_gotoxy(4, 1);
+		printf("%d  %d  %d  %d  %d", Sensor[0], Sensor[1], Sensor[2], Sensor[3],
+				Sensor[4]);
+
+		if (Comando == RUN) {
+			lcd_gotoxy(1, 2);
+			printf("RUN ");
+		} else if (Comando == STOP) {
+			lcd_gotoxy(1, 2);
+			printf("STOP");
+		}
+
+
+		lcd_gotoxy(9, 2);
+		printf("Volta: %d", Volta);
+
+		if(Tempo_3s>0)
+		{
+			lcd_gotoxy(1, 3);
+			printf("Conect. Bluetooth  ");
+		} else if(!Tempo_3s)
+		{
+			lcd_gotoxy(1, 3);
+			printf("Desc. Bluetooth");
+		}
+
+		lcd_gotoxy(1, 4);
+		printf("Bateria: ");
+
+	}
+
+	lcdCommand(0x0c);
+
+	return;
+}

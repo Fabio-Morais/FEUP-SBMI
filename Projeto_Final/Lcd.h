@@ -14,6 +14,14 @@
 #define rw PD1       // read/write signal pin 1
 #define rs PB4      // register select signal pin 0
 
+/*MODO DE OPERAÇÃO*/
+#define MODO_MANUAL 40
+#define MODO_AUTOMATICO 41
+
+/*ESTADO ROBO*/
+#define RUN 150
+#define STOP 151
+
 void lcd_command(char cmd);
 void lcd_init(void);
 void lcd_data(unsigned char data);
@@ -57,12 +65,13 @@ void lcd_init(void) {
 	lcdData(0b11111111);
 	lcd_gotoxy(2, 1);
 	lcdData(0b11111111);
-	lcd_gotoxy(14, 1);
+	lcd_gotoxy(18, 1);
 	lcdData(0b11111111);
-	lcd_gotoxy(15, 1);
+	lcd_gotoxy(19, 1);
 	lcdData(0b11111111);
-	lcd_gotoxy(16, 1);
+	lcd_gotoxy(20, 1);
 	lcdData(0b11111111);
+
 	_delay_ms(200);
 
   return;
@@ -77,14 +86,7 @@ void lcd_print( char *str) { // store address value of the string in pointer *st
   }
   return;
 }
-void lcd_print_lcd(uint8_t Sensor[5]){
 
-	lcd_gotoxy(3,1);
-	printf("%d %d  %d  %d %d", Sensor[0], Sensor[1], Sensor[2], Sensor[3], Sensor[4]);
-	lcdCommand(0x0c);
-	_delay_us(50);
-	return;
-}
 void lcdData(unsigned char data_value) {
   char data_value1;
   data_value1 = data_value & 0xF0;          // Mask lower nibble
@@ -120,9 +122,9 @@ void lcd_command(char cmd) {
   return;
 }
 void lcd_gotoxy(unsigned char x, unsigned char y) {
-  unsigned char firstCharAdr[2] = {0x80, 0xC0};
+  unsigned char firstCharAdr[4] = {0x80, 0xC0,0x94,0xD4};
   lcdCommand(firstCharAdr[y - 1] + x - 1);
-  _delay_ms(10);
+  _delay_ms(1);
 }
 #endif
 
