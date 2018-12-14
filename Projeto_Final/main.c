@@ -24,6 +24,7 @@
 #include "Bluetooth.h"
 #include "Battery.h"
 
+
 /*SENSORES*/
 #define Sensor_OUT5 PC5
 #define Sensor_OUT4 PC4
@@ -94,7 +95,7 @@ uint8_t Volta; //Numero da volta
 uint8_t aux;//flag do rising edge para contar o numero de voltas
 uint8_t Flag_Perdido; //Quando está perdido apenas imprime 1 vez
 unsigned int V=0, new, old; // Para medir tensão
-
+char Battery_Print[14]; //Nivel de Bateria
 
 /********************************************************************************/
 
@@ -133,7 +134,7 @@ void lcd_print_lcd();
 void Read_Battery();
 
 /*Mostra percentagem bateria*/
-void Print_Battery(double v);
+void Print_Battery(unsigned int v);
 
 /********************************************************************************/
 
@@ -740,7 +741,7 @@ void lcd_print_lcd() {
 		}
 
 		lcd_gotoxy(1, 4);
-		printf("Bateria: -%d-", V);
+		printf("%s", Battery_Print);
 
 	}
 
@@ -754,7 +755,7 @@ void Read_Battery() {
 	if (new != old) {
 		old = new;
 		V = (double) VREF * new * 1000 / 1024;
-
+		Print_Battery(V);
 	}
 }
 
@@ -787,24 +788,27 @@ void Print_Battery(unsigned int V){
 		Battery_Level=0;
 /**UTILIZAR ESTE METODO PARA IMPRIMIR BATERIA, POIS ELIMINA O PRINTF ANTERIOR**/
 
-	  char V[10];
-	    int i;
 	    for(i=0; i<10; i++)
 	    {
-	        if(i<5)
-	            V[i]=0b11111111;
+	        if(i<Battery_Level)
+	        	Battery_Print[i]=0b11111111; //Coloca quadrados escuros
 	        else
-	            V[i]='x';
+	        	Battery_Print[i]=' ';
 	    }
-	printf("\n->%s<-", V);
 
-		for(i=0;i<Battery_Level; i++)
-		{
-			lcd_gotoxy(i+7, 1);
-			lcdData(0b11111111);
-		}
+	    sprintf(Battery_Print+10, "%d", (Battery_Level*10));
+	    if((Battery_Level*10)<1){
+	    	Battery_Print[11]='%';
+	    	Battery_Print[12]=' ';
+	    	Battery_Print[13]=' ';
+	    }
 
-
+	    else if((Battery_Level*10)<100){
+	    	Battery_Print[12]='%';
+	    	Battery_Print[13]=' ';
+	    }
+	    else if((Battery_Level*10)==100)
+	    	Battery_Print[13]='%';
 
 }
 
