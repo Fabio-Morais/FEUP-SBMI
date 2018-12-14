@@ -93,6 +93,7 @@ uint8_t Robo_Perdido; //Flag que diz se robo está perdido ou não
 uint8_t Volta; //Numero da volta
 uint8_t aux;//flag do rising edge para contar o numero de voltas
 uint8_t Flag_Perdido; //Quando está perdido apenas imprime 1 vez
+unsigned int V=0, new, old; // Para medir tensão
 
 
 /********************************************************************************/
@@ -127,6 +128,12 @@ void Conta_Volta(void);
 
 /*Imprime dados LCD*/
 void lcd_print_lcd();
+
+/*Lê valor de tensao em mV e coloca na variavel V o nivel de tensão*/
+void Read_Battery();
+
+/*Mostra percentagem bateria*/
+void Print_Battery(double v);
 
 /********************************************************************************/
 
@@ -225,20 +232,8 @@ int main(void) {
 	Robo_Perdido = 0;
 
 	Tempo_Send_Sensores=10;
-	unsigned int V=0, new, old;
 	init_adc();
-	while(1){
-		new=read_adc(0);
-		if(new != old){
-		old=new;
-		V= (double) VREF * new * 1000/1024;
-		lcd_gotoxy(4, 1);
-		_delay_ms(2);
-		printf("%dmV", V);
 
-		}
-		_delay_ms(1000);
-	}
 
 	while (1) {
 
@@ -299,6 +294,7 @@ int main(void) {
 
 			Conta_Volta(); //Conta numero de voltas e imprime
 
+			Read_Battery();
 
 			if(!Tempo_Send_Sensores)
 			{
@@ -744,7 +740,7 @@ void lcd_print_lcd() {
 		}
 
 		lcd_gotoxy(1, 4);
-		printf("Bateria: ");
+		printf("Bateria: -%d-", V);
 
 	}
 
@@ -753,5 +749,62 @@ void lcd_print_lcd() {
 	return;
 }
 
+void Read_Battery() {
+	new = read_adc(0);
+	if (new != old) {
+		old = new;
+		V = (double) VREF * new * 1000 / 1024;
 
+	}
+}
+
+
+void Print_Battery(unsigned int V){
+
+	short i, Battery_Level;
+
+	if(V>=4600)
+		Battery_Level=10;
+	else if(V>=4500)
+		Battery_Level=9;
+	else if(V>=4400)
+		Battery_Level=8;
+	else if(V>=4300)
+		Battery_Level=7;
+	else if(V>=4100)
+		Battery_Level=6;
+	else if(V>=3900)
+		Battery_Level=5;
+	else if(V>=3700)
+		Battery_Level=4;
+	else if(V>=3500)
+		Battery_Level=3;
+	else if(V>=3300)
+		Battery_Level=2;
+	else if(V>=3100)
+		Battery_Level=1;
+	else
+		Battery_Level=0;
+/**UTILIZAR ESTE METODO PARA IMPRIMIR BATERIA, POIS ELIMINA O PRINTF ANTERIOR**/
+
+	  char V[10];
+	    int i;
+	    for(i=0; i<10; i++)
+	    {
+	        if(i<5)
+	            V[i]=0b11111111;
+	        else
+	            V[i]='x';
+	    }
+	printf("\n->%s<-", V);
+
+		for(i=0;i<Battery_Level; i++)
+		{
+			lcd_gotoxy(i+7, 1);
+			lcdData(0b11111111);
+		}
+
+
+
+}
 
