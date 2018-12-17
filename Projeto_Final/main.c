@@ -24,7 +24,6 @@
 #include "Bluetooth.h"
 #include "Battery.h"
 
-
 /*SENSORES*/
 #define Sensor_OUT5 PC5
 #define Sensor_OUT4 PC4
@@ -59,21 +58,21 @@
 #define REVERSE 30 //Marcha atrás
 #define TRAVA 31 //Trava
 
+
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
 #define Velocidade_Padrao 200
-#define Mudanca_Suave_Padrao 15
-#define Mudanca_Media_Padrao 30
-#define Mudanca_Media_Mais_Padrao 60
-#define Mudanca_Bruta_Padrao 190
+#define Mudanca_Suave_Padrao 11
+#define Mudanca_Media_Padrao 20
+#define Mudanca_Media_Mais_Padrao 28
 
 /*TIMERS*/
 #define T1BOTTOM 65536-16000
 #define T2TOP 255
 #define Battery_Time 1000
-#define Bluetooth_Time  2
-
+#define Bluetooth_Time  5
+#define Lcd_Time 25
 
 /*MODO DE OPERAÇÃO*/
 #define MODO_MANUAL 40
@@ -88,20 +87,21 @@
 uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
 		Mudanca_Media_mais, Mudanca_Bruta; //Velocidades para manipular
-volatile uint16_t Tempo_Bateria, Tempo_3s, Tempo_Perdido, Tempo_Led, Tempo_Send_Sensores,
-Tempo_Bluetooth; //Tempos
+volatile uint16_t Tempo_Bateria, Tempo_3s, Tempo_Perdido, Tempo_Led,
+		Tempo_Send_Sensores, Tempo_Bluetooth, Timer_Pisca; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
 volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
 volatile uint8_t Flag_Ciclo; //Para correr no primeiro ciclo
 uint8_t Robo_Perdido; //Flag que diz se robo está perdido ou não
 uint8_t Volta; //Numero da volta
-uint8_t aux;//flag do rising edge para contar o numero de voltas
+uint8_t aux; //flag do rising edge para contar o numero de voltas
 uint8_t Flag_Perdido; //Quando está perdido apenas imprime 1 vez
 unsigned int V, new, old; // Para medir tensão
 uint8_t Battery_Level; //Nivel de bateria(0 a 10)
 char Battery_Print[20]; //Nivel de Bateria
 uint8_t Flag_Bluetooth; //
+uint8_t Flag_Bateria_Fraca;
 /********************************************************************************/
 
 /*Fazer a inicialização das variaveis*/
@@ -115,7 +115,6 @@ void Calculo();
 
 /*Envia para os motores os valores que a função Calculo fez*/
 void Motores(uint8_t Valid);
-
 
 /*Imprime lcd | Acende luz azul*/
 void Modo_Run(void);
@@ -142,11 +141,14 @@ void Read_Battery();
 void Print_Battery(unsigned int v);
 
 /*Envia dados bluetooth*/
-void Send_To_Bluetooth();
+void Send_To_Bluetooth(void);
 
 /*Envia percentagem bateria via bluetooth*/
-void Send_Battery_Bluetooth();
+void Send_Battery_Bluetooth(void);
 
+void Bateria_Fraca(void);
+
+void Competicao(void);
 
 /********************************************************************************/
 /*******************************INTERRUPÇÕES*************************************/
@@ -161,12 +163,14 @@ ISR(TIMER1_OVF_vect) {
 		Tempo_3s--;
 	if (Tempo_Perdido > 0)
 		Tempo_Perdido--;
-	if(Tempo_Led>0)
+	if (Tempo_Led > 0)
 		Tempo_Led--;
-	if(Tempo_Send_Sensores>0)
+	if (Tempo_Send_Sensores > 0)
 		Tempo_Send_Sensores--;
-	if(Tempo_Bluetooth>0)
+	if (Tempo_Bluetooth > 0)
 		Tempo_Bluetooth--;
+	if (Timer_Pisca > 0)
+		Timer_Pisca--;
 }
 
 /*RECEBE DADOS BLUETOOTH*/
@@ -183,45 +187,42 @@ ISR(USART_RX_vect) {
 		Comando = RecByte;
 	/*Recebe valores de velocidade a escolher*/
 	else if (RecByte >= 61 && RecByte <= 65) {
-		if (RecByte == 61)
-			{
-			Velocidade_Default = Velocidade_Padrao - 30;
-			Mudanca_Bruta = Mudanca_Bruta_Padrao - 30;
-			}
-		else if (RecByte == 62)
-			{
+		if (RecByte == 61) {
+			Velocidade_Default = Velocidade_Padrao - 22;
+		} else if (RecByte == 62) {
 			Velocidade_Default = Velocidade_Padrao - 15;
-			Mudanca_Bruta = Mudanca_Bruta_Padrao - 15;
-			}
-		else if (RecByte == 63)
-			{
+		} else if (RecByte == 63) {
 			Velocidade_Default = Velocidade_Padrao;
-			Mudanca_Bruta = Mudanca_Bruta_Padrao;
 
-			}
-		else if (RecByte == 64)
-			{
+		} else if (RecByte == 64) {
+			Velocidade_Default = 210;
+			Mudanca_Suave= Mudanca_Suave_Padrao+10;
+			Mudanca_Media= Mudanca_Media_Padrao+10;
+			Mudanca_Media_mais= Mudanca_Media_Mais_Padrao+10;
+			Mudanca_Bruta = 200;
+
+		} else if (RecByte == 65) {
 			Velocidade_Default = 220;
-			Mudanca_Bruta = 210;
 
-			}
-		else if (RecByte == 65)
-			{
-			Velocidade_Default = 240;
+			Mudanca_Suave= Mudanca_Suave_Padrao+20;
+			Mudanca_Media= Mudanca_Media_Padrao+20;
+			Mudanca_Media_mais= Mudanca_Media_Mais_Padrao+20;
 			Mudanca_Bruta = 230;
 
-			}
+		}
 	}
+	else if(RecByte == 42) //Modo competição
+		Modo_Robo = MODO_COMPETICAO;
 	/*******************************************/
 	/*CONTROLO MANUAL*/
 	else if ((RecByte >= 1) && (RecByte <= 4)) {
 		if (RecByte == 1) //RECEBE DIREITA
-			Controlo_Manual = DIREITA_BRUTA;
+			Controlo_Manual = DIREITA_MEDIA_MAIS;
 		else if (RecByte == 2) //RECEBE ESQUERDA
-			Controlo_Manual = ESQUERDA_BRUTA;
+			Controlo_Manual = ESQUERDA_MEDIA_MAIS;
 		else if (RecByte == 3) //RECEBE FRENTE
 			Controlo_Manual = OK;
-		else if(RecByte == 4)
+		else if (RecByte == 4)
 			Controlo_Manual = REVERSE;
 	} else if (RecByte == 5 || (RecByte >= 11 && RecByte <= 14)) //RECEBE PARADO
 		Controlo_Manual = PARADO;
@@ -230,27 +231,18 @@ ISR(USART_RX_vect) {
 
 	/*Recebe valores de velocidade a escolher*/
 	else if (RecByte >= 51 && RecByte <= 55) {
-		if (RecByte == 51)
-			{
+		if (RecByte == 51) {
 			Velocidade_Default = 160;
 			Mudanca_Bruta = 150;
-			}
-		else if (RecByte == 52)
-			{
+		} else if (RecByte == 52) {
 			Velocidade_Default = 180;
 			Mudanca_Bruta = 170;
-			}
-		else if (RecByte == 53)
-			{
+		} else if (RecByte == 53) {
 			Velocidade_Default = Velocidade_Padrao;
-			Mudanca_Bruta = Mudanca_Bruta_Padrao;
-			}
-		else if (RecByte == 54)
-			{
+		} else if (RecByte == 54) {
 			Velocidade_Default = 210;
 			Mudanca_Bruta = 210;
-			}
-		else if (RecByte == 55){
+		} else if (RecByte == 55) {
 			Velocidade_Default = 220;
 			Mudanca_Bruta = 230;
 		}
@@ -260,7 +252,6 @@ ISR(USART_RX_vect) {
 	/*Para confirmar se continua a receber informaçao via bluetooth*/
 	Tempo_3s = 2000;
 }
-
 
 /*********************************************************************************/
 /************************************MAIN****************************************/
@@ -281,17 +272,15 @@ int main(void) {
 	Modo_Robo = MODO_AUTOMATICO;
 	Flag_Ciclo = 0;
 	Robo_Perdido = 0;
-	Flag_Bluetooth=1;
-
+	Flag_Bluetooth = 1;
+	Flag_Bateria_Fraca=0;
 
 	/*TEMPOS*/
-	Tempo_Send_Sensores=10;
-	Tempo_Bluetooth=0;
-	Tempo_Bateria=Battery_Time;
-
+	Tempo_Send_Sensores = Lcd_Time;
+	Tempo_Bluetooth = 0;
+	Tempo_Bateria = Battery_Time;
 
 	init_adc();
-
 
 	while (1) {
 
@@ -306,62 +295,58 @@ int main(void) {
 			if (Comando == RUN) { //Robo em andamento
 
 				Calculo(); // Toma açoes nos motores de acordo com sensores
-
 				if (!Robo_Perdido) { // Está tudo OK
 
 					Modo_Run();
 					Conta_Volta(); //Conta numero de voltas e imprime
-
 				}
 
 				/****Não está na pista*****/
 				else if (Robo_Perdido && !Tempo_Perdido) { //Está perdido | Fica parado
 
+					Flag_Perdido = 0;
+					while (1) {
 
-						Flag_Perdido = 0;
-						while (1) {
+						/*Executa apenas 1 vez*/
+						if (!Flag_Perdido) {
+							Modo_Perdido();
 
-							/*Executa apenas 1 vez*/
-							if(!Flag_Perdido)
-							{
-								Modo_Perdido();
-
-							}
-							/*Pisca LED*/
-							if(!Tempo_Led){
-								PORTB ^= (1 << LED_VERMELHO);
-								Tempo_Led=100;
-							}
-							Sensores(); // Coloca na varivel Sensores os valores ativos
-							if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4]) {
-								Robo_Perdido = 0;
-								lcd_init();
-								Send_Data(123); // envia que saiu de Perdido
-								_delay_ms(2);
-								break;
-							}
 						}
+						/*Pisca LED*/
+						if (!Tempo_Led) {
+							PORTB ^= (1 << LED_VERMELHO);
+							Tempo_Led = 100;
+						}
+						Sensores(); // Coloca na varivel Sensores os valores ativos
+						if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3]
+								|| !Sensor[4]) {
+							Robo_Perdido = 0;
+							Reset_Lcd();
+							Send_Data(123); // envia que saiu de Perdido
+							_delay_ms(2);
+							break;
+						}
+					}
 
 				}
 			} else if (Comando == STOP) { // Robo parado
 				Modo_Stop();
 			}
 
-
 			/******Dados Bateria*******/
-			if(!Tempo_Bateria){
+			if (!Tempo_Bateria) {
 
 				Read_Battery();
-				Tempo_Bateria=Battery_Time;
+				Tempo_Bateria = Battery_Time;
 				Send_Battery_Bluetooth();
 			}
-			/******Dados para LCD*******/
-			if(!Tempo_Send_Sensores)
-			{
-				lcd_print_lcd();// Envia dados para LCD
-				Tempo_Send_Sensores=10;
-			}
 
+			/******Dados para LCD*******/
+			/*if (!Tempo_Send_Sensores) {
+				lcd_print_lcd(); // Envia dados para LCD
+				Tempo_Send_Sensores = Lcd_Time;
+			}
+			*/
 			/******Dados para Bluetooth*******/
 			Send_To_Bluetooth(); // Envia dados via bluetooth
 
@@ -376,31 +361,27 @@ int main(void) {
 				Incializa_Manual(); // Imprime lcd | Acende luz
 			}
 
-		/************************RECEBE DADOS********************/
+			/************************RECEBE DADOS********************/
 			if (Controlo_Manual != MODO_AUTOMATICO) {
 				Motores(Controlo_Manual);
 				_delay_us(150);
 
 			}
 
-
-		/**************************ENVIA DADOS******************/
+			/**************************ENVIA DADOS******************/
 
 			/******Dados Bateria*******/
-			if(!Tempo_Bateria){
+			if (!Tempo_Bateria) {
 
 				Read_Battery();
-				Tempo_Bateria=Battery_Time;
+				Tempo_Bateria = Battery_Time;
 				Send_Battery_Bluetooth();
 			}
 			/******Dados para LCD*******/
-			if(!Tempo_Send_Sensores)
-			{
-				lcd_print_lcd();// Envia dados para LCD
-				Tempo_Send_Sensores=10;
+			if (!Tempo_Send_Sensores) {
+				lcd_print_lcd(); // Envia dados para LCD
+				Tempo_Send_Sensores = Lcd_Time;
 			}
-
-
 
 			/*Caso bluetooth perca comunicação */
 			if (!Tempo_3s) {
@@ -412,56 +393,78 @@ int main(void) {
 				lcd_gotoxy(1, 3);
 				printf("********************");
 				_delay_ms(30);
-				Tempo_Led=400;
+				Tempo_Led = 400;
 				while (1) {
-					if(!Tempo_Led){
-					PORTD ^= (1 << LED_AZUL);
-					Tempo_Led=400;
+					if (!Tempo_Led) {
+						PORTD ^= (1 << LED_AZUL);
+						Tempo_Led = 400;
 					}
 					Motores(PARADO);
-					if(Tempo_3s) //Caso receba algum valor via bluetooth, o tempo dá reset
+					if (Tempo_3s) //Caso receba algum valor via bluetooth, o tempo dá reset
 					{
-						Flag_Ciclo=0;
+						Flag_Ciclo = 0;
 						break;
 					}
 				}
 			}
 
 		}
-	/************************************************************/
+		/************************************************************/
 		/*ANDA COMPETIÇAO*/
-	/**************************************************************/
+		/**************************************************************/
 		else if (Modo_Robo == MODO_COMPETICAO) {
+			Velocidade_Default = 230;
+			Mudanca_Suave=10;
+			Mudanca_Media=20;
+			Mudanca_Media_mais=30;
+			Reset_Lcd();
+			Competicao();
 			while (1) {
 				Sensores(); // Coloca na varivel Sensores os valores ativos
+				if (!Robo_Perdido) {
+					Calculo();
 
-				if(!Robo_Perdido)
-				{
-				Calculo();
-				}
-				else if(Robo_Perdido && !Tempo_Perdido)
-				{
+				} else if (Robo_Perdido && !Tempo_Perdido) {
 
-						Motores(PARADO);
+					Motores(PARADO);
 
-						PORTB ^=(1<<LED_VERMELHO);
-						if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3] || !Sensor[4])
-							{
-							Robo_Perdido = 0;
-							PORTB &= ~(1<<LED_VERMELHO);
+					PORTB ^= (1 << LED_VERMELHO);
+					if (!Sensor[0] || !Sensor[1] || !Sensor[2] || !Sensor[3]
+							|| !Sensor[4]) {
+						Robo_Perdido = 0;
+						PORTB &= ~(1 << LED_VERMELHO);
 
-							}
+					}
 
 				}
+				if(Modo_Robo != MODO_COMPETICAO)
+					{
+					Reset_Lcd();
+					break;
+					}
 			}
 		}
 
 
+		while(Battery_Level<=2){
+			Bateria_Fraca();
 
+			if (!Tempo_Bateria) {
+
+				Read_Battery();
+				Tempo_Bateria = Battery_Time;
+				Send_Battery_Bluetooth();
+			}
+
+			if(Battery_Level>2){
+				Flag_Bateria_Fraca=0;
+				Reset_Lcd();
+
+			}
+		}
 
 	}
 }
-
 
 /*********************************************************************************/
 /***********************************FUNÇÕES***************************************/
@@ -474,9 +477,9 @@ void Init() {
 	TIFR2 |= (7 << TOV2); // Clear pending intr
 	TCCR2A = (3 << WGM20) | (1 << COM2A1) | (1 << COM2B1); // Fast PWM
 	TCCR2B |= (1 << WGM22); // Set at TOP
-	TCNT2 = 0; // Load BOTTOM value
-	OCR2A = 127;
-	OCR2B = 127;
+	TCNT2 = 170; // Load BOTTOM value  *150*
+	OCR2A = Velocidade_Padrao;
+	OCR2B = Velocidade_Padrao;
 	TIMSK2 = 0; // Disable interrupts
 	TCCR2B = 1;
 
@@ -493,9 +496,6 @@ void Init() {
 	 * 3->64*/
 	/*enable interrupt.*/
 	sei();
-
-
-
 
 	/*SENSORES COM PULL UP*/
 	DDRC &= ~((1 << Sensor_OUT5) | (1 << Sensor_OUT4) | (1 << Sensor_OUT3)
@@ -516,14 +516,14 @@ void Init() {
 
 	/*ATRIBUIÇÃO DAS VELOCIDADES*/
 	Velocidade_Default = Velocidade_Padrao;
-	Mudanca_Bruta = Mudanca_Bruta_Padrao;
+
 	Mudanca_Suave = Mudanca_Suave_Padrao;
 	Mudanca_Media = Mudanca_Media_Padrao;
 	Mudanca_Media_mais = Mudanca_Media_Mais_Padrao;
 
 	/*Colocar numero de voltas a 1*/
-	Volta=1;
-	Send_Data(71);// Reset de voltas via bluetooth
+	Volta = 1;
+	Send_Data(71); // Reset de voltas via bluetooth
 
 }
 
@@ -564,21 +564,19 @@ void Sensores() {
 void Calculo() {
 
 	/*00000*/
-	if(!Robo_Perdido && (MODO_AUTOMATICO || MODO_COMPETICAO) && Sensor[0] && Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4])
-		{
-		Tempo_Perdido=3000;
-		Robo_Perdido=1;
-		}
-
-
+	if (!Robo_Perdido && (MODO_AUTOMATICO || MODO_COMPETICAO) && Sensor[0]
+			&& Sensor[1] && Sensor[2] && Sensor[3] && Sensor[4]) {
+		Tempo_Perdido = 3000;
+		Robo_Perdido = 1;
+	}
 
 	/*00100*/
-	 else if (!Sensor[2] && Sensor[0] && Sensor[1] && Sensor[3] && Sensor[4]) {
+	else if (!Sensor[2] && Sensor[0] && Sensor[1] && Sensor[3] && Sensor[4]) {
 		Motores(OK);
 		Robo_Perdido = 0;
 	}
 	/*01000*/
-	else if (!Sensor[1] && Sensor[0] && Sensor[2] && Sensor[3] && Sensor[4] ) {
+	else if (!Sensor[1] && Sensor[0] && Sensor[2] && Sensor[3] && Sensor[4]) {
 		Motores(ESQUERDA_MEDIA);
 		Robo_Perdido = 0;
 	}
@@ -598,47 +596,47 @@ void Calculo() {
 		Robo_Perdido = 0;
 	}
 	/*11000*/
-	else if(Sensor[2] && !Sensor[0] && !Sensor[1] && Sensor[3] && Sensor[4]){
-			Motores(ESQUERDA_MEDIA_MAIS);
-			Robo_Perdido = 0;
-		}
+	else if (Sensor[2] && !Sensor[0] && !Sensor[1] && Sensor[3] && Sensor[4]) {
+		Motores(ESQUERDA_BRUTA);
+		Robo_Perdido = 0;
+	}
 	/*01100*/
-	else if(!Sensor[2] && Sensor[0] && !Sensor[1] && Sensor[3] && Sensor[4]){
-			Motores(ESQUERDA_SUAVE);
-			Robo_Perdido = 0;
-		}
+	else if (!Sensor[2] && Sensor[0] && !Sensor[1] && Sensor[3] && Sensor[4]) {
+		Motores(ESQUERDA_SUAVE);
+		Robo_Perdido = 0;
+	}
 	/*00110*/
-	else if(!Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && Sensor[4])
-	{
+	else if (!Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && Sensor[4]) {
 		Motores(DIREITA_SUAVE);
 		Robo_Perdido = 0;
 	}
 	/*00011*/
-	else if(Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && !Sensor[4]){
-		Motores(DIREITA_MEDIA_MAIS);
+	else if (Sensor[2] && Sensor[0] && Sensor[1] && !Sensor[3] && !Sensor[4]) {
+		Motores(DIREITA_BRUTA);
 		Robo_Perdido = 0;
 	}
 
-
 	/*11100*/
-	else if(!Sensor[0] && !Sensor[1] && !Sensor[2] && Sensor[3] && Sensor[4]){
+	else if (!Sensor[0] && !Sensor[1] && !Sensor[2] && Sensor[3] && Sensor[4]) {
 		Motores(ESQUERDA_BRUTA);
-		Robo_Perdido=0;
+		Robo_Perdido = 0;
 	}
 	/*00111*/
-	else if(Sensor[0] && Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4]){
+	else if (Sensor[0] && Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4]) {
 		Motores(DIREITA_BRUTA);
-		Robo_Perdido=0;
+		Robo_Perdido = 0;
 	}
 	/*11110*/
-	else if(!Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3] && Sensor[4]){
+	else if (!Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3]
+			&& Sensor[4]) {
 		Motores(ESQUERDA_BRUTA);
-		Robo_Perdido=0;
+		Robo_Perdido = 0;
 	}
 	/*01111*/
-	else if(Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4]){
+	else if (Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3]
+			&& !Sensor[4]) {
 		Motores(DIREITA_BRUTA);
-		Robo_Perdido=0;
+		Robo_Perdido = 0;
 	}
 
 
@@ -646,6 +644,7 @@ void Calculo() {
 /*OCR2A -> MOTOR ESQUERDA
  * OCR2B-> MOTOR DIREITA*/
 void Motores(uint8_t Valid) {
+
 
 	switch (Valid) {
 
@@ -658,8 +657,9 @@ void Motores(uint8_t Valid) {
 		/**********ESQUERDA******************/
 	case ESQUERDA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
-		OCR2A = Velocidade_Default - Mudanca_Bruta;
-		OCR2B = Velocidade_Default;
+		OCR2A = 255;
+		PORTB |= (1<<Motor_E_T);
+		OCR2B = Velocidade_Default + 10;
 		break;
 
 	case ESQUERDA_SUAVE:
@@ -683,8 +683,9 @@ void Motores(uint8_t Valid) {
 		/**********DIREITA******************/
 	case DIREITA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
-		OCR2A = Velocidade_Default;
-		OCR2B = Velocidade_Default - Mudanca_Bruta;
+		OCR2A = Velocidade_Default + 10 ;
+		OCR2B =255;
+		PORTB |= (1<<Motor_D_T);
 		break;
 
 	case DIREITA_SUAVE:
@@ -724,6 +725,7 @@ void Motores(uint8_t Valid) {
 		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
 		break;
 
+
 	default:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = 0;
@@ -735,7 +737,6 @@ void Motores(uint8_t Valid) {
 
 void Modo_Run(void) {
 
-	PORTC = 0;
 	PORTB &= ~(1 << LED_VERMELHO);
 	PORTD |= (1 << LED_AZUL);
 
@@ -759,8 +760,8 @@ void Modo_Perdido(void) {
 	printf("ROBO PERDIDO");
 	lcd_gotoxy(1, 2);
 	printf("Coloque na pista");
-	Flag_Perdido=1;
-	Tempo_Led=100; //150ms de tempo
+	Flag_Perdido = 1;
+	Tempo_Led = 100; //150ms de tempo
 	Send_Data(122); // envia que ficou perdido
 	_delay_ms(2);
 
@@ -784,50 +785,42 @@ void Incializa_Manual(void) {
 
 void Conta_Volta(void) {
 
-
 	/*Conta a volta */
-	if (!Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4])
+	/*10101*/
+	if (!Sensor[0] && Sensor[1] && !Sensor[2] && Sensor[3] && !Sensor[4])
 		aux = 1;
-	else if ((aux == 1) && (Sensor[0] || Sensor[4]))
+	else if ((aux == 1) && (Sensor[0] && Sensor[4]))
 		aux = 2;
 	else if (aux == 2) {
 		Send_Data(70);
 		aux = 0;
-		_delay_ms(3);
+		_delay_us(200);
 		Volta++;
 	}
-
-
-
 
 }
 
 void lcd_print_lcd() {
 
-
 	if (Modo_Robo == MODO_AUTOMATICO) {
-		lcd_gotoxy(4, 1);
-		printf("%d  %d  %d  %d  %d", !Sensor[0], !Sensor[1], !Sensor[2], !Sensor[3],
-				!Sensor[4]);
+		lcd_gotoxy(1, 1);
+		printf("%c%c %d  %d  %d  %d  %d %c%c%c",0b11111111,0b11111111, !Sensor[0], !Sensor[1], !Sensor[2],
+				!Sensor[3], !Sensor[4], 0b11111111,0b11111111 ,0b11111111);
 
 		if (Comando == RUN) {
 			lcd_gotoxy(1, 2);
-			printf("RUN ");
+			printf("RUN       Volta: %d", Volta);
 		} else if (Comando == STOP) {
 			lcd_gotoxy(1, 2);
 			printf("STOP");
 		}
 
 
-		lcd_gotoxy(9, 2);
-		printf("Volta: %d", Volta);
 
-		if(Tempo_3s>0)
-		{
+		if (Tempo_3s > 0) {
 			lcd_gotoxy(1, 3);
 			printf("Conect. Bluetooth  ");
-		} else if(!Tempo_3s)
-		{
+		} else if (!Tempo_3s) {
 			lcd_gotoxy(1, 3);
 			printf("Desc. Bluetooth");
 		}
@@ -835,9 +828,7 @@ void lcd_print_lcd() {
 		lcd_gotoxy(1, 4);
 		printf("%s", Battery_Print);
 
-	}
-	else if(Modo_Robo == MODO_MANUAL)
-	{
+	} else if (Modo_Robo == MODO_MANUAL) {
 		lcd_gotoxy(1, 4);
 		printf("%s", Battery_Print);
 	}
@@ -856,187 +847,208 @@ void Read_Battery() {
 	}
 }
 
-
-void Print_Battery(unsigned int V){
+void Print_Battery(unsigned int V) {
 
 	uint8_t i;
 
-	if(V>=4600)
-		Battery_Level=10;
-	else if(V>=4500)
-		Battery_Level=9;
-	else if(V>=4400)
-		Battery_Level=8;
-	else if(V>=4300)
-		Battery_Level=7;
-	else if(V>=4100)
-		Battery_Level=6;
-	else if(V>=3900)
-		Battery_Level=5;
-	else if(V>=3700)
-		Battery_Level=4;
-	else if(V>=3500)
-		Battery_Level=3;
-	else if(V>=3300)
-		Battery_Level=2;
-	else if(V>=3100)
-		Battery_Level=1;
+	if (V >= 4600)
+		Battery_Level = 10;
+	else if (V >= 4500)
+		Battery_Level = 9;
+	else if (V >= 4400)
+		Battery_Level = 8;
+	else if (V >= 4300)
+		Battery_Level = 7;
+	else if (V >= 4100)
+		Battery_Level = 6;
+	else if (V >= 3900)
+		Battery_Level = 5;
+	else if (V >= 3700)
+		Battery_Level = 4;
+	else if (V >= 3500)
+		Battery_Level = 3;
+	else if (V >= 3300)
+		Battery_Level = 2;
+	else if (V >= 3100)
+		Battery_Level = 1;
 	else
-		Battery_Level=0;
-/**UTILIZAR ESTE METODO PARA IMPRIMIR BATERIA, POIS ELIMINA O PRINTF ANTERIOR**/
+		Battery_Level = 0;
+	/**UTILIZAR ESTE METODO PARA IMPRIMIR BATERIA, POIS ELIMINA O PRINTF ANTERIOR**/
 
-	    for(i=0; i<10; i++)
-	    {
-	        if(i<Battery_Level)
-	        	Battery_Print[i]=0b11111111; //Coloca quadrados escuros
-	        else
-	        	Battery_Print[i]=' ';
-	    }
+	for (i = 0; i < 10; i++) {
+		if (i < Battery_Level)
+			Battery_Print[i] = 0b11111111; //Coloca quadrados escuros
+		else
+			Battery_Print[i] = ' ';
+	}
 
-	    sprintf(Battery_Print+10, "%d", (Battery_Level*10));
-	    if((Battery_Level*10)<1){
-	    	Battery_Print[11]='%';
-	    	for(i=12; i<20; i++ ) //Dá clean no resto da linha
-	    		Battery_Print[i]=' ';
-	    }
+	sprintf(Battery_Print + 10, "%d", (Battery_Level * 10));
+	if ((Battery_Level * 10) < 1) {
+		Battery_Print[11] = '%';
+		for (i = 12; i < 20; i++) //Dá clean no resto da linha
+			Battery_Print[i] = ' ';
+	}
 
-	    else if((Battery_Level*10)<100){
-	    	Battery_Print[12]='%';
-	    	for(i=13; i<20; i++ )//Dá clean no resto da linha
-	    		Battery_Print[i]=' ';
-	    }
-	    else if((Battery_Level*10)==100){
-	    	Battery_Print[13]='%';
-	    	for(i=14; i<20; i++ )//Dá clean no resto da linha
-	    		Battery_Print[i]=' ';
-	    }
+	else if ((Battery_Level * 10) < 100) {
+		Battery_Print[12] = '%';
+		for (i = 13; i < 20; i++) //Dá clean no resto da linha
+			Battery_Print[i] = ' ';
+	} else if ((Battery_Level * 10) == 100) {
+		Battery_Print[13] = '%';
+		for (i = 14; i < 20; i++) //Dá clean no resto da linha
+			Battery_Print[i] = ' ';
+	}
 
 }
 
 /*Envia os respetivos codigos ascii de cada sensor para bluetooth*/
-void Send_To_Bluetooth(){
+void Send_To_Bluetooth() {
 
 	/*10ms temppo minimo a 9600
 	 * ou 3 ms com 30ms cada sensor*/
-	if(!Sensor[0] && !Tempo_Bluetooth && Flag_Bluetooth==1)
-		{
+	if (!Sensor[0] && !Tempo_Bluetooth && Flag_Bluetooth == 1) {
 		Send_Data(1);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=2;
-		}
-	else if(Sensor[0] && !Tempo_Bluetooth && Flag_Bluetooth==1)
-		{
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 2;
+	} else if (Sensor[0] && !Tempo_Bluetooth && Flag_Bluetooth == 1) {
 		Send_Data(11);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=2;
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 2;
 
-		}
-
-	/*************************/
-
-	if(!Sensor[1] && !Tempo_Bluetooth && Flag_Bluetooth==2)
-		{
-		Send_Data(2);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=3;
-
-		}
-	else if(Sensor[1] && !Tempo_Bluetooth && Flag_Bluetooth==2)
-		{
-		Send_Data(12);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=3;
-
-		}
-
-	/*************************/
-
-	if(!Sensor[2] && !Tempo_Bluetooth && Flag_Bluetooth==3)
-		{
-		Send_Data(3);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=4;
-
-		}
-	else if(Sensor[2] && !Tempo_Bluetooth && Flag_Bluetooth==3)
-		{
-		Send_Data(13);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=4;
-		}
-
-	/*************************/
-
-	if(!Sensor[3] && !Tempo_Bluetooth && Flag_Bluetooth==4)
-		{
-		Send_Data(4);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=5;
-
-		}
-	else if(Sensor[3] && !Tempo_Bluetooth && Flag_Bluetooth==4)
-		{
-		Send_Data(14);
-		Tempo_Bluetooth=Bluetooth_Time;
-		Flag_Bluetooth=5;
-
-		}
-
-	/*************************/
-
-	if(!Sensor[4] && !Tempo_Bluetooth && Flag_Bluetooth==5)
-		{
-		Send_Data(5);
-		Tempo_Bluetooth=Bluetooth_Time;
-		if(Comando == RUN)
-			Flag_Bluetooth=6;
-		else
-			Flag_Bluetooth=1;
-
-		}
-	else if(Sensor[4] && !Tempo_Bluetooth && Flag_Bluetooth==5)
-		{
-		Send_Data(15);
-		Tempo_Bluetooth=Bluetooth_Time;
-		if(Comando == RUN)
-			Flag_Bluetooth=6;
-		else
-			Flag_Bluetooth=1;
-		}
-	if (Comando == RUN && Flag_Bluetooth == 6)
-	{
-		Send_Data(125); //Envia que está em run
-		Flag_Bluetooth=1;
-		Tempo_Bluetooth=Bluetooth_Time;
 	}
 
-return;
+	/*************************/
+
+	if (!Sensor[1] && !Tempo_Bluetooth && Flag_Bluetooth == 2) {
+		Send_Data(2);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 3;
+
+	} else if (Sensor[1] && !Tempo_Bluetooth && Flag_Bluetooth == 2) {
+		Send_Data(12);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 3;
+
+	}
+
+	/*************************/
+
+	if (!Sensor[2] && !Tempo_Bluetooth && Flag_Bluetooth == 3) {
+		Send_Data(3);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 4;
+
+	} else if (Sensor[2] && !Tempo_Bluetooth && Flag_Bluetooth == 3) {
+		Send_Data(13);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 4;
+	}
+
+	/*************************/
+
+	if (!Sensor[3] && !Tempo_Bluetooth && Flag_Bluetooth == 4) {
+		Send_Data(4);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 5;
+
+	} else if (Sensor[3] && !Tempo_Bluetooth && Flag_Bluetooth == 4) {
+		Send_Data(14);
+		Tempo_Bluetooth = Bluetooth_Time;
+		Flag_Bluetooth = 5;
+
+	}
+
+	/*************************/
+
+	if (!Sensor[4] && !Tempo_Bluetooth && Flag_Bluetooth == 5) {
+		Send_Data(5);
+		Tempo_Bluetooth = Bluetooth_Time;
+		if (Comando == RUN)
+			Flag_Bluetooth = 6;
+		else
+			Flag_Bluetooth = 1;
+
+	} else if (Sensor[4] && !Tempo_Bluetooth && Flag_Bluetooth == 5) {
+		Send_Data(15);
+		Tempo_Bluetooth = Bluetooth_Time;
+		if (Comando == RUN)
+			Flag_Bluetooth = 6;
+		else
+			Flag_Bluetooth = 1;
+	}
+	if (Comando == RUN && Flag_Bluetooth == 6) {
+		Send_Data(125); //Envia que está em run
+		Flag_Bluetooth = 1;
+		Tempo_Bluetooth = Bluetooth_Time;
+	}
+
+	return;
 }
 
-void Send_Battery_Bluetooth(){
+void Send_Battery_Bluetooth() {
 
-if(Battery_Level==10)
-	Send_Data(30);
-else if(Battery_Level==9)
-	Send_Data(29);
-else if(Battery_Level==8)
-	Send_Data(28);
-else if(Battery_Level==7)
-	Send_Data(27);
-else if(Battery_Level==6)
-	Send_Data(26);
-else if(Battery_Level==5)
-	Send_Data(25);
-else if(Battery_Level==4)
-	Send_Data(24);
-else if(Battery_Level==3)
-	Send_Data(23);
-else if(Battery_Level==2)
-	Send_Data(22);
-else if(Battery_Level==1)
-	Send_Data(21);
-else if(Battery_Level==0)
-	Send_Data(20);
+	if (Battery_Level == 10)
+		Send_Data(30);
+	else if (Battery_Level == 9)
+		Send_Data(29);
+	else if (Battery_Level == 8)
+		Send_Data(28);
+	else if (Battery_Level == 7)
+		Send_Data(27);
+	else if (Battery_Level == 6)
+		Send_Data(26);
+	else if (Battery_Level == 5)
+		Send_Data(25);
+	else if (Battery_Level == 4)
+		Send_Data(24);
+	else if (Battery_Level == 3)
+		Send_Data(23);
+	else if (Battery_Level == 2)
+		Send_Data(22);
+	else if (Battery_Level == 1)
+		Send_Data(21);
+	else if (Battery_Level == 0)
+		Send_Data(20);
 
 }
 
+void Bateria_Fraca() {
+
+	if(!Flag_Bateria_Fraca)
+	{
+		lcd_gotoxy(1, 1);
+		printf("********************");
+		lcd_gotoxy(1, 2);
+		printf("POUCA BATERIA      ");
+		lcd_gotoxy(1, 3);
+		printf("********************");
+		lcd_gotoxy(1, 4);
+		printf("Mude de pilhas");
+		Motores(PARADO);
+		Flag_Bateria_Fraca=1;
+		PORTD &= ~(1 << LED_AZUL);
+		PORTB &= ~(1 << LED_VERMELHO);
+		lcdCommand(0x0c);
+
+	}
+
+	else if (!Timer_Pisca) {
+		PORTD ^= (1 << LED_AZUL);
+		PORTB ^= (1 << LED_VERMELHO);
+		Timer_Pisca = 700;
+	}
+}
+
+void Competicao(void){
+
+
+	lcd_gotoxy(1, 1);
+	printf("********************");
+	lcd_gotoxy(1, 2);
+	printf("**MODO COMPETICAO***");
+	lcd_gotoxy(1, 3);
+	printf("********************");
+	PORTD |= (1<<LED_AZUL);
+	lcdCommand(0x0c);
+
+}

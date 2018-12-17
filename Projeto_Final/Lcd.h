@@ -28,6 +28,7 @@ void lcdCommand(unsigned char);
 void lcdData(unsigned char);
 void lcd_print(char *str);
 void lcd_gotoxy(unsigned char x, unsigned char y);
+void Reset_Lcd();
 
 static FILE mystdout = FDEV_SETUP_STREAM(lcdData, NULL, _FDEV_SETUP_WRITE);
 
@@ -57,17 +58,7 @@ void lcd_init(void) {
 
 	lcdCommand(0x80); // —8 go to first line and –0 is for 0th position
 
-	/*Faz moldura dos sensores*/
-	lcd_gotoxy(1, 1);
-	lcdData(0b11111111);
-	lcd_gotoxy(2, 1);
-	lcdData(0b11111111);
-	lcd_gotoxy(18, 1);
-	lcdData(0b11111111);
-	lcd_gotoxy(19, 1);
-	lcdData(0b11111111);
-	lcd_gotoxy(20, 1);
-	lcdData(0b11111111);
+
 
 	_delay_ms(200);//Espera um pouco antes de começar
 
@@ -124,5 +115,11 @@ void lcd_gotoxy(unsigned char x, unsigned char y) {
 	lcdCommand(firstCharAdr[y - 1] + x - 1);
 	_delay_us(500);
 }
+
+void Reset_Lcd(){
+	lcdCommand(0x01); // Clear LCD
+
+}
+
 #endif
 
