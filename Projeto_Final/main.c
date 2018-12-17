@@ -58,12 +58,11 @@
 #define REVERSE 30 //Marcha atrás
 #define TRAVA 31 //Trava
 
-
 /* 0-> Parado
  * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
 #define Velocidade_Padrao 200
-#define Mudanca_Suave_Padrao 11
+#define Mudanca_Suave_Padrao 15
 #define Mudanca_Media_Padrao 20
 #define Mudanca_Media_Mais_Padrao 28
 
@@ -71,8 +70,8 @@
 #define T1BOTTOM 65536-16000
 #define T2TOP 255
 #define Battery_Time 1000
-#define Bluetooth_Time  5
-#define Lcd_Time 25
+#define Bluetooth_Time  15
+#define Lcd_Time 20
 
 /*MODO DE OPERAÇÃO*/
 #define MODO_MANUAL 40
@@ -86,7 +85,7 @@
 /*VARIAVEIS*/
 uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
-		Mudanca_Media_mais, Mudanca_Bruta; //Velocidades para manipular
+		Mudanca_Media_mais; //Velocidades para manipular
 volatile uint16_t Tempo_Bateria, Tempo_3s, Tempo_Perdido, Tempo_Led,
 		Tempo_Send_Sensores, Tempo_Bluetooth, Timer_Pisca; //Tempos
 volatile uint8_t Comando; //Start and Stop
@@ -100,7 +99,8 @@ uint8_t Flag_Perdido; //Quando está perdido apenas imprime 1 vez
 unsigned int V, new, old; // Para medir tensão
 uint8_t Battery_Level; //Nivel de bateria(0 a 10)
 char Battery_Print[20]; //Nivel de Bateria
-uint8_t Flag_Bluetooth; //
+uint8_t Flag_Bluetooth; //Envia UM dado a cada X segundos
+uint8_t Flag_Lcd; //Imprime UM dado a cada X segundos
 uint8_t Flag_Bateria_Fraca;
 /********************************************************************************/
 
@@ -195,23 +195,20 @@ ISR(USART_RX_vect) {
 			Velocidade_Default = Velocidade_Padrao;
 
 		} else if (RecByte == 64) {
-			Velocidade_Default = 210;
-			Mudanca_Suave= Mudanca_Suave_Padrao+10;
-			Mudanca_Media= Mudanca_Media_Padrao+10;
-			Mudanca_Media_mais= Mudanca_Media_Mais_Padrao+10;
-			Mudanca_Bruta = 200;
+			Velocidade_Default = 220;
+			Mudanca_Suave = Mudanca_Suave_Padrao + 10;
+			Mudanca_Media = Mudanca_Media_Padrao + 10;
+			Mudanca_Media_mais = Mudanca_Media_Mais_Padrao + 10;
 
 		} else if (RecByte == 65) {
-			Velocidade_Default = 220;
+			Velocidade_Default = 240;
 
-			Mudanca_Suave= Mudanca_Suave_Padrao+20;
-			Mudanca_Media= Mudanca_Media_Padrao+20;
-			Mudanca_Media_mais= Mudanca_Media_Mais_Padrao+20;
-			Mudanca_Bruta = 230;
+			Mudanca_Suave = Mudanca_Suave_Padrao + 20;
+			Mudanca_Media = Mudanca_Media_Padrao + 20;
+			Mudanca_Media_mais = Mudanca_Media_Mais_Padrao + 20;
 
 		}
-	}
-	else if(RecByte == 42) //Modo competição
+	} else if (RecByte == 42) //Modo competição
 		Modo_Robo = MODO_COMPETICAO;
 	/*******************************************/
 	/*CONTROLO MANUAL*/
@@ -232,19 +229,15 @@ ISR(USART_RX_vect) {
 	/*Recebe valores de velocidade a escolher*/
 	else if (RecByte >= 51 && RecByte <= 55) {
 		if (RecByte == 51) {
-			Velocidade_Default = 160;
-			Mudanca_Bruta = 150;
-		} else if (RecByte == 52) {
 			Velocidade_Default = 180;
-			Mudanca_Bruta = 170;
+		} else if (RecByte == 52) {
+			Velocidade_Default = 200;
 		} else if (RecByte == 53) {
 			Velocidade_Default = Velocidade_Padrao;
 		} else if (RecByte == 54) {
-			Velocidade_Default = 210;
-			Mudanca_Bruta = 210;
-		} else if (RecByte == 55) {
 			Velocidade_Default = 220;
-			Mudanca_Bruta = 230;
+		} else if (RecByte == 55) {
+			Velocidade_Default = 250;
 		}
 
 	}
@@ -273,7 +266,8 @@ int main(void) {
 	Flag_Ciclo = 0;
 	Robo_Perdido = 0;
 	Flag_Bluetooth = 1;
-	Flag_Bateria_Fraca=0;
+	Flag_Bateria_Fraca = 0;
+	Flag_Lcd = 0;
 
 	/*TEMPOS*/
 	Tempo_Send_Sensores = Lcd_Time;
@@ -297,7 +291,7 @@ int main(void) {
 				Calculo(); // Toma açoes nos motores de acordo com sensores
 				if (!Robo_Perdido) { // Está tudo OK
 
-					Modo_Run();
+					Modo_Run(); // acende luzes
 					Conta_Volta(); //Conta numero de voltas e imprime
 				}
 
@@ -342,11 +336,11 @@ int main(void) {
 			}
 
 			/******Dados para LCD*******/
-			/*if (!Tempo_Send_Sensores) {
+			if (!Tempo_Send_Sensores) {
 				lcd_print_lcd(); // Envia dados para LCD
 				Tempo_Send_Sensores = Lcd_Time;
 			}
-			*/
+
 			/******Dados para Bluetooth*******/
 			Send_To_Bluetooth(); // Envia dados via bluetooth
 
@@ -413,10 +407,10 @@ int main(void) {
 		/*ANDA COMPETIÇAO*/
 		/**************************************************************/
 		else if (Modo_Robo == MODO_COMPETICAO) {
-			Velocidade_Default = 230;
-			Mudanca_Suave=10;
-			Mudanca_Media=20;
-			Mudanca_Media_mais=30;
+			Velocidade_Default = 250;
+			Mudanca_Suave = 15;
+			Mudanca_Media = 20;
+			Mudanca_Media_mais = 30;
 			Reset_Lcd();
 			Competicao();
 			while (1) {
@@ -437,16 +431,14 @@ int main(void) {
 					}
 
 				}
-				if(Modo_Robo != MODO_COMPETICAO)
-					{
+				if (Modo_Robo != MODO_COMPETICAO) {
 					Reset_Lcd();
 					break;
-					}
+				}
 			}
 		}
 
-
-		while(Battery_Level<=2){
+		while (Battery_Level <= 2) {
 			Bateria_Fraca();
 
 			if (!Tempo_Bateria) {
@@ -456,8 +448,8 @@ int main(void) {
 				Send_Battery_Bluetooth();
 			}
 
-			if(Battery_Level>2){
-				Flag_Bateria_Fraca=0;
+			if (Battery_Level > 2) {
+				Flag_Bateria_Fraca = 0;
 				Reset_Lcd();
 
 			}
@@ -639,12 +631,16 @@ void Calculo() {
 		Robo_Perdido = 0;
 	}
 
+	/*10101*/
+	else if(!Sensor[0] && Sensor[1] && !Sensor[2] && Sensor[3] && !Sensor[4]){
+		Motores(OK);
+		Robo_Perdido = 0;
+	}
 
 }
 /*OCR2A -> MOTOR ESQUERDA
  * OCR2B-> MOTOR DIREITA*/
 void Motores(uint8_t Valid) {
-
 
 	switch (Valid) {
 
@@ -658,8 +654,11 @@ void Motores(uint8_t Valid) {
 	case ESQUERDA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
 		OCR2A = 255;
-		PORTB |= (1<<Motor_E_T);
-		OCR2B = Velocidade_Default + 10;
+		PORTB |= (1 << Motor_E_T);
+		if(Velocidade_Default<245)
+			OCR2B = Velocidade_Default + 10;
+		else
+			OCR2B = Velocidade_Default;
 		break;
 
 	case ESQUERDA_SUAVE:
@@ -683,9 +682,12 @@ void Motores(uint8_t Valid) {
 		/**********DIREITA******************/
 	case DIREITA_BRUTA:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
-		OCR2A = Velocidade_Default + 10 ;
-		OCR2B =255;
-		PORTB |= (1<<Motor_D_T);
+		if(Velocidade_Default<245)
+			OCR2A = Velocidade_Default + 10;
+		else
+			OCR2A = Velocidade_Default;
+		OCR2B = 255;
+		PORTB |= (1 << Motor_D_T);
 		break;
 
 	case DIREITA_SUAVE:
@@ -724,7 +726,6 @@ void Motores(uint8_t Valid) {
 		OCR2B = 255;
 		PORTB |= (1 << Motor_E_T) | (1 << Motor_D_T);
 		break;
-
 
 	default:
 		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
@@ -794,7 +795,7 @@ void Conta_Volta(void) {
 	else if (aux == 2) {
 		Send_Data(70);
 		aux = 0;
-		_delay_us(200);
+		_delay_us(700);
 		Volta++;
 	}
 
@@ -803,30 +804,37 @@ void Conta_Volta(void) {
 void lcd_print_lcd() {
 
 	if (Modo_Robo == MODO_AUTOMATICO) {
-		lcd_gotoxy(1, 1);
-		printf("%c%c %d  %d  %d  %d  %d %c%c%c",0b11111111,0b11111111, !Sensor[0], !Sensor[1], !Sensor[2],
-				!Sensor[3], !Sensor[4], 0b11111111,0b11111111 ,0b11111111);
+		if (Flag_Lcd == 0) {
+			lcd_gotoxy(1, 1);
+			printf("%c%c %d  %d  %d  %d  %d %c%c%c", 0b11111111, 0b11111111,
+					!Sensor[0], !Sensor[1], !Sensor[2], !Sensor[3], !Sensor[4],
+					0b11111111, 0b11111111, 0b11111111);
+			Flag_Lcd = 1;
+		} else if (Flag_Lcd == 1) {
 
-		if (Comando == RUN) {
-			lcd_gotoxy(1, 2);
-			printf("RUN       Volta: %d", Volta);
-		} else if (Comando == STOP) {
-			lcd_gotoxy(1, 2);
-			printf("STOP");
+			if (Comando == RUN) {
+				lcd_gotoxy(1, 2);
+				printf("RUN       Volta: %d", Volta);
+			} else if (Comando == STOP) {
+				lcd_gotoxy(1, 2);
+				printf("STOP");
+			}
+			Flag_Lcd = 2;
+		} else if (Flag_Lcd == 2) {
+
+			if (Tempo_3s > 0) {
+				lcd_gotoxy(1, 3);
+				printf("Conect. Bluetooth  ");
+			} else if (!Tempo_3s) {
+				lcd_gotoxy(1, 3);
+				printf("Desc. Bluetooth");
+			}
+			Flag_Lcd = 3;
+		} else if (Flag_Lcd == 3) {
+			lcd_gotoxy(1, 4);
+			printf("%s", Battery_Print);
+			Flag_Lcd = 0;
 		}
-
-
-
-		if (Tempo_3s > 0) {
-			lcd_gotoxy(1, 3);
-			printf("Conect. Bluetooth  ");
-		} else if (!Tempo_3s) {
-			lcd_gotoxy(1, 3);
-			printf("Desc. Bluetooth");
-		}
-
-		lcd_gotoxy(1, 4);
-		printf("%s", Battery_Print);
 
 	} else if (Modo_Robo == MODO_MANUAL) {
 		lcd_gotoxy(1, 4);
@@ -1010,12 +1018,12 @@ void Send_Battery_Bluetooth() {
 	else if (Battery_Level == 0)
 		Send_Data(20);
 
+	_delay_us(500);
 }
 
 void Bateria_Fraca() {
 
-	if(!Flag_Bateria_Fraca)
-	{
+	if (!Flag_Bateria_Fraca) {
 		lcd_gotoxy(1, 1);
 		printf("********************");
 		lcd_gotoxy(1, 2);
@@ -1025,7 +1033,7 @@ void Bateria_Fraca() {
 		lcd_gotoxy(1, 4);
 		printf("Mude de pilhas");
 		Motores(PARADO);
-		Flag_Bateria_Fraca=1;
+		Flag_Bateria_Fraca = 1;
 		PORTD &= ~(1 << LED_AZUL);
 		PORTB &= ~(1 << LED_VERMELHO);
 		lcdCommand(0x0c);
@@ -1039,8 +1047,7 @@ void Bateria_Fraca() {
 	}
 }
 
-void Competicao(void){
-
+void Competicao(void) {
 
 	lcd_gotoxy(1, 1);
 	printf("********************");
@@ -1048,7 +1055,7 @@ void Competicao(void){
 	printf("**MODO COMPETICAO***");
 	lcd_gotoxy(1, 3);
 	printf("********************");
-	PORTD |= (1<<LED_AZUL);
+	PORTD |= (1 << LED_AZUL);
 	lcdCommand(0x0c);
 
 }
