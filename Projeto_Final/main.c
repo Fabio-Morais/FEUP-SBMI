@@ -18,6 +18,8 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#include <avr/eeprom.h>
+
 
 /*Ficheiros de bilbiotecas*/
 #include "Lcd.h"
@@ -114,6 +116,13 @@ uint8_t Pre_Valid;
 uint8_t Count, Count2;
 uint8_t Flag_Gravacao;
 uint8_t Flag_Reproducao;
+
+
+//declare an eeprom array
+unsigned char EEMEM my_eeprom_array[Gravacao_Limite];
+uint16_t EEMEM Tempo_eeprom[Gravacao_Limite];
+unsigned char EEMEM Velocidade_eeprom[Gravacao_Limite];
+
 /********************************************************************************/
 
 /*Fazer a inicialização das variaveis*/
@@ -238,6 +247,7 @@ ISR(USART_RX_vect) {
 	else if (RecByte == 43) {
 		Modo_Gravacao = 1;
 		Tempo_Gravacao = 0;
+		Count2 = 0;
 		Flag_Gravacao = 2;
 	} else if (RecByte == 44) {
 		Modo_Gravacao = 0;
@@ -498,6 +508,9 @@ int main(void) {
 
 		if (Modo_Reproducao) {
 			Init_Reproducao();
+
+
+
 			while (1) {
 
 				if (!Tempo_Gravacao_Menos && !Flag_Reproducao) {
@@ -513,7 +526,6 @@ int main(void) {
 				}
 				if (!Modo_Reproducao) {
 					Count = 0;
-					Count2 = 0;
 					Reset_Lcd();
 					Flag_Ciclo=0;
 					Flag_Reproducao=0;
@@ -716,6 +728,17 @@ void Motores(uint8_t Valid) {
 			|| Flag_Gravacao == 2 || Flag_Gravacao == 3) {
 		Gravar(Pre_Valid);
 		Tempo_Gravacao = 0;
+		if(Flag_Gravacao == 3)
+		{
+			eeprom_update_byte(&my_eeprom_array[0], Count2);
+			for(Count=0; Count<Count2; Count++){
+				eeprom_update_byte(&my_eeprom_array[Count+1], Gravacao[Count]);
+				eeprom_update_word(&Tempo_eeprom[Count+1], Gravacao_Tempo[Count]);
+				eeprom_update_byte(&Velocidade_eeprom[Count+1], Gravacao_Velocidade[Count]);
+
+			}
+
+		}
 		Flag_Gravacao = 0;
 
 	} else if (!Modo_Gravacao && !Modo_Reproducao)
@@ -1172,7 +1195,15 @@ void Reproduzir() {
 
 }
 void Init_Reproducao() {
+	Count2= eeprom_read_byte(&my_eeprom_array[0]);
+	for(Count=0; Count<Count2; Count++ ){
+		Gravacao[Count]= eeprom_read_byte(&my_eeprom_array[Count+1]);
+		Gravacao_Tempo[Count]= eeprom_read_word(&Tempo_eeprom[Count+1]);
+		Gravacao_Velocidade[Count]=  eeprom_read_byte(&Velocidade_eeprom[Count+1]);
+	}
 	Count = 0;
+
+
 	Tempo_Gravacao_Menos = Gravacao_Tempo[Count];
 	Velocidade_Default = Gravacao_Velocidade[Count];
 	Motores(Gravacao[Count]);
