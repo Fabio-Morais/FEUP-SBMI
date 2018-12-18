@@ -70,13 +70,15 @@
 #define T1BOTTOM 65536-16000
 #define T2TOP 255
 #define Battery_Time 1000
-#define Bluetooth_Time  15
+#define Bluetooth_Time  20
 #define Lcd_Time 20
 
 /*MODO DE OPERAÇÃO*/
 #define MODO_MANUAL 40
 #define MODO_AUTOMATICO 41
 #define MODO_COMPETICAO 42
+
+#define Gravacao_Limite 200
 
 /*ESTADO ROBO*/
 #define RUN 150
@@ -87,7 +89,8 @@ uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
 		Mudanca_Media_mais; //Velocidades para manipular
 volatile uint16_t Tempo_Bateria, Tempo_3s, Tempo_Perdido, Tempo_Led,
-		Tempo_Send_Sensores, Tempo_Bluetooth, Timer_Pisca; //Tempos
+		Tempo_Send_Sensores, Tempo_Bluetooth, Timer_Pisca, Tempo_Gravacao,
+		Tempo_Gravacao_Menos; //Tempos
 volatile uint8_t Comando; //Start and Stop
 volatile uint8_t Modo_Robo; // Modo manual ou automatico
 volatile int8_t Controlo_Manual; // Variavel que armazena as direções em modo MANUAL
@@ -102,6 +105,15 @@ char Battery_Print[20]; //Nivel de Bateria
 uint8_t Flag_Bluetooth; //Envia UM dado a cada X segundos
 uint8_t Flag_Lcd; //Imprime UM dado a cada X segundos
 uint8_t Flag_Bateria_Fraca;
+
+uint8_t Gravacao[Gravacao_Limite];
+uint16_t Gravacao_Tempo[Gravacao_Limite];
+uint8_t Gravacao_Velocidade[Gravacao_Limite];
+uint8_t Modo_Gravacao, Modo_Reproducao;
+uint8_t Pre_Valid;
+uint8_t Count, Count2;
+uint8_t Flag_Gravacao;
+uint8_t Flag_Reproducao;
 /********************************************************************************/
 
 /*Fazer a inicialização das variaveis*/
@@ -150,6 +162,12 @@ void Bateria_Fraca(void);
 
 void Competicao(void);
 
+void Gravar(uint8_t Mudanca);
+
+void Reproduzir();
+
+void Init_Reproducao();
+
 /********************************************************************************/
 /*******************************INTERRUPÇÕES*************************************/
 /********************************************************************************/
@@ -171,6 +189,12 @@ ISR(TIMER1_OVF_vect) {
 		Tempo_Bluetooth--;
 	if (Timer_Pisca > 0)
 		Timer_Pisca--;
+
+	if (Tempo_Gravacao < 65536)
+		Tempo_Gravacao++;
+
+	if (Tempo_Gravacao_Menos > 0)
+		Tempo_Gravacao_Menos--;
 }
 
 /*RECEBE DADOS BLUETOOTH*/
@@ -188,9 +212,9 @@ ISR(USART_RX_vect) {
 	/*Recebe valores de velocidade a escolher*/
 	else if (RecByte >= 61 && RecByte <= 65) {
 		if (RecByte == 61) {
-			Velocidade_Default = Velocidade_Padrao - 22;
-		} else if (RecByte == 62) {
 			Velocidade_Default = Velocidade_Padrao - 15;
+		} else if (RecByte == 62) {
+			Velocidade_Default = Velocidade_Padrao - 8;
 		} else if (RecByte == 63) {
 			Velocidade_Default = Velocidade_Padrao;
 
@@ -210,13 +234,26 @@ ISR(USART_RX_vect) {
 		}
 	} else if (RecByte == 42) //Modo competição
 		Modo_Robo = MODO_COMPETICAO;
+	/*******Gravação********/
+	else if (RecByte == 43) {
+		Modo_Gravacao = 1;
+		Tempo_Gravacao = 0;
+		Flag_Gravacao = 2;
+	} else if (RecByte == 44) {
+		Modo_Gravacao = 0;
+		Flag_Gravacao = 3;
+		PORTB &= ~(1 << LED_VERMELHO);
+	} else if (RecByte == 45)
+		Modo_Reproducao = 1;
+	else if (RecByte == 46)
+		Modo_Reproducao = 0;
 	/*******************************************/
 	/*CONTROLO MANUAL*/
 	else if ((RecByte >= 1) && (RecByte <= 4)) {
 		if (RecByte == 1) //RECEBE DIREITA
-			Controlo_Manual = DIREITA_MEDIA_MAIS;
+			Controlo_Manual = DIREITA_BRUTA;
 		else if (RecByte == 2) //RECEBE ESQUERDA
-			Controlo_Manual = ESQUERDA_MEDIA_MAIS;
+			Controlo_Manual = ESQUERDA_BRUTA;
 		else if (RecByte == 3) //RECEBE FRENTE
 			Controlo_Manual = OK;
 		else if (RecByte == 4)
@@ -261,20 +298,23 @@ int main(void) {
 	lcd_init();
 
 	/*Inicia variaveis*/
-	Comando = RUN;
+	Comando = STOP;
 	Modo_Robo = MODO_AUTOMATICO;
 	Flag_Ciclo = 0;
 	Robo_Perdido = 0;
 	Flag_Bluetooth = 1;
 	Flag_Bateria_Fraca = 0;
 	Flag_Lcd = 0;
+	Modo_Gravacao = 0;
+	Modo_Reproducao = 0;
+	Flag_Reproducao = 0;
+
+	init_adc();
 
 	/*TEMPOS*/
 	Tempo_Send_Sensores = Lcd_Time;
 	Tempo_Bluetooth = 0;
 	Tempo_Bateria = Battery_Time;
-
-	init_adc();
 
 	while (1) {
 
@@ -293,6 +333,9 @@ int main(void) {
 
 					Modo_Run(); // acende luzes
 					Conta_Volta(); //Conta numero de voltas e imprime
+
+					/******Dados para Bluetooth*******/
+					Send_To_Bluetooth(); // Envia dados via bluetooth
 				}
 
 				/****Não está na pista*****/
@@ -340,9 +383,6 @@ int main(void) {
 				lcd_print_lcd(); // Envia dados para LCD
 				Tempo_Send_Sensores = Lcd_Time;
 			}
-
-			/******Dados para Bluetooth*******/
-			Send_To_Bluetooth(); // Envia dados via bluetooth
 
 		}
 		/************************************************************/
@@ -397,6 +437,7 @@ int main(void) {
 					if (Tempo_3s) //Caso receba algum valor via bluetooth, o tempo dá reset
 					{
 						Flag_Ciclo = 0;
+
 						break;
 					}
 				}
@@ -409,8 +450,8 @@ int main(void) {
 		else if (Modo_Robo == MODO_COMPETICAO) {
 			Velocidade_Default = 250;
 			Mudanca_Suave = 15;
-			Mudanca_Media = 20;
-			Mudanca_Media_mais = 30;
+			Mudanca_Media = 40;
+			Mudanca_Media_mais = 70;
 			Reset_Lcd();
 			Competicao();
 			while (1) {
@@ -455,6 +496,33 @@ int main(void) {
 			}
 		}
 
+		if (Modo_Reproducao) {
+			Init_Reproducao();
+			while (1) {
+
+				if (!Tempo_Gravacao_Menos && !Flag_Reproducao) {
+					Reproduzir();
+				} else if (Flag_Reproducao) {
+					Motores(PARADO);
+					lcd_gotoxy(1, 2);
+					printf(" Reproducao acabada ");
+					if (!Tempo_Gravacao_Menos) {
+						PORTD ^= (1 << LED_AZUL);
+						Tempo_Gravacao_Menos = 1000;
+					}
+				}
+				if (!Modo_Reproducao) {
+					Count = 0;
+					Count2 = 0;
+					Reset_Lcd();
+					Flag_Ciclo=0;
+					Flag_Reproducao=0;
+					break;
+				}
+			}
+
+		}
+
 	}
 }
 
@@ -469,7 +537,7 @@ void Init() {
 	TIFR2 |= (7 << TOV2); // Clear pending intr
 	TCCR2A = (3 << WGM20) | (1 << COM2A1) | (1 << COM2B1); // Fast PWM
 	TCCR2B |= (1 << WGM22); // Set at TOP
-	TCNT2 = 170; // Load BOTTOM value  *150*
+	TCNT2 = 0; // Load BOTTOM value
 	OCR2A = Velocidade_Padrao;
 	OCR2B = Velocidade_Padrao;
 	TIMSK2 = 0; // Disable interrupts
@@ -517,6 +585,7 @@ void Init() {
 	Volta = 1;
 	Send_Data(71); // Reset de voltas via bluetooth
 
+	Motores(PARADO);
 }
 
 /* [ OUT1  OUT2  OUT3  OUT4  OUT5 ]
@@ -632,7 +701,7 @@ void Calculo() {
 	}
 
 	/*10101*/
-	else if(!Sensor[0] && Sensor[1] && !Sensor[2] && Sensor[3] && !Sensor[4]){
+	else if (!Sensor[0] && Sensor[1] && !Sensor[2] && Sensor[3] && !Sensor[4]) {
 		Motores(OK);
 		Robo_Perdido = 0;
 	}
@@ -642,6 +711,22 @@ void Calculo() {
  * OCR2B-> MOTOR DIREITA*/
 void Motores(uint8_t Valid) {
 
+	/********MODO GRAVAÇAO*******/
+	if ((Pre_Valid != Valid && Modo_Gravacao && !Modo_Reproducao)
+			|| Flag_Gravacao == 2 || Flag_Gravacao == 3) {
+		Gravar(Pre_Valid);
+		Tempo_Gravacao = 0;
+		Flag_Gravacao = 0;
+
+	} else if (!Modo_Gravacao && !Modo_Reproducao)
+		Count = 0;
+	else if (Modo_Gravacao) {
+		if (!Timer_Pisca) {
+			PORTB ^= (1 << LED_VERMELHO);
+			Timer_Pisca = 1500;
+		}
+	}
+	/*****************************/
 	switch (Valid) {
 
 	case OK:
@@ -652,10 +737,10 @@ void Motores(uint8_t Valid) {
 
 		/**********ESQUERDA******************/
 	case ESQUERDA_BRUTA:
-		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
+		PORTB &= ~((1 << Motor_D_T));
 		OCR2A = 255;
 		PORTB |= (1 << Motor_E_T);
-		if(Velocidade_Default<245)
+		if (Velocidade_Default < 245)
 			OCR2B = Velocidade_Default + 10;
 		else
 			OCR2B = Velocidade_Default;
@@ -681,8 +766,8 @@ void Motores(uint8_t Valid) {
 
 		/**********DIREITA******************/
 	case DIREITA_BRUTA:
-		PORTB &= ~((1 << Motor_E_T) | (1 << Motor_D_T));
-		if(Velocidade_Default<245)
+		PORTB &= ~((1 << Motor_E_T));
+		if (Velocidade_Default < 245)
 			OCR2A = Velocidade_Default + 10;
 		else
 			OCR2A = Velocidade_Default;
@@ -734,6 +819,8 @@ void Motores(uint8_t Valid) {
 		break;
 	}
 
+	Pre_Valid = Valid;
+
 }
 
 void Modo_Run(void) {
@@ -748,8 +835,10 @@ void Modo_Stop(void) {
 	Motores(PARADO);
 	PORTB ^= (1 << LED_VERMELHO);
 	PORTD &= ~(1 << LED_AZUL);
-	Send_Data(126); //Envia que está em STOP
-	_delay_ms(2);
+	if (!Tempo_Bluetooth) {
+		Send_Data(126); //Envia que está em STOP
+		Tempo_Bluetooth = Bluetooth_Time;
+	}
 }
 
 void Modo_Perdido(void) {
@@ -1057,5 +1146,41 @@ void Competicao(void) {
 	printf("********************");
 	PORTD |= (1 << LED_AZUL);
 	lcdCommand(0x0c);
+
+}
+
+void Gravar(uint8_t Mudanca) {
+
+	if (Count < Gravacao_Limite) {
+		Gravacao[Count] = Mudanca;
+		Gravacao_Tempo[Count] = Tempo_Gravacao;
+		Gravacao_Velocidade[Count] = Velocidade_Default;
+		Count2++;
+		Count++;
+	}
+}
+
+void Reproduzir() {
+	if (Count < Count2) {
+		Velocidade_Default = Gravacao_Velocidade[Count];
+		Motores(Gravacao[Count]);
+		Tempo_Gravacao_Menos = Gravacao_Tempo[Count];
+		Count++;
+	} else {
+		Flag_Reproducao = 1;
+	}
+
+}
+void Init_Reproducao() {
+	Count = 0;
+	Tempo_Gravacao_Menos = Gravacao_Tempo[Count];
+	Velocidade_Default = Gravacao_Velocidade[Count];
+	Motores(Gravacao[Count]);
+	lcd_gotoxy(1, 1);
+	printf("********************");
+	lcd_gotoxy(1, 2);
+	printf("****A REPRODUZIR****");
+	lcd_gotoxy(1, 3);
+	printf("********************");
 
 }
