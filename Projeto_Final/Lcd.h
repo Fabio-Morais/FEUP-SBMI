@@ -8,10 +8,10 @@
 #include <util/delay.h>
 #include <stdio.h>
 
-#define ctrl PORTD // We are using port B
-#define en PB5       // enable signal pin 2
-#define rw PD1       // read/write signal pin 1
-#define rs PB4      // register select signal pin 0
+#define ctrl PORTD
+#define en PB5
+#define rw PD1
+#define rs PB4
 
 /*MODO DE OPERAÇÃO*/
 #define MODO_MANUAL 40
@@ -59,7 +59,6 @@ void lcd_init(void) {
 	lcdCommand(0x80); // —8 go to first line and –0 is for 0th position
 
 
-
 	_delay_ms(200);//Espera um pouco antes de começar
 
 	return;
@@ -77,10 +76,10 @@ void lcd_print(char *str) { // store address value of the string in pointer *str
 void lcdData(unsigned char data_value) {
 	char data_value1;
 	data_value1 = data_value & 0xF0;          // Mask lower nibble
-	lcd_data(data_value1);                    // because PD4-PD7 pins are used.
+	lcd_data(data_value1);
 	_delay_us(10);
 	data_value1 = ((data_value << 4) & 0xF0); // Shift 4-bit and mask
-	lcd_data(data_value1);                    // Send to LCD7	_delay_us(10);
+	lcd_data(data_value1);                    // Send to LCD	_delay_us(10);
 	_delay_us(10);
 }
 

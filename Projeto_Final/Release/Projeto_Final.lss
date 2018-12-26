@@ -469,17 +469,17 @@ Disassembly of section .text:
      410:	80 93 ad 04 	sts	0x04AD, r24
      414:	89 e1       	ldi	r24, 0x19	; 25
      416:	80 93 bf 03 	sts	0x03BF, r24
-     41a:	8e e1       	ldi	r24, 0x1E	; 30
+     41a:	8d e2       	ldi	r24, 0x2D	; 45
      41c:	80 93 ae 04 	sts	0x04AE, r24
-     420:	86 e2       	ldi	r24, 0x26	; 38
+     420:	8c e3       	ldi	r24, 0x3C	; 60
      422:	0a c0       	rjmp	.+20     	; 0x438 <__vector_18+0x6c>
      424:	80 ef       	ldi	r24, 0xF0	; 240
      426:	80 93 ad 04 	sts	0x04AD, r24
      42a:	83 e2       	ldi	r24, 0x23	; 35
      42c:	80 93 bf 03 	sts	0x03BF, r24
-     430:	88 e2       	ldi	r24, 0x28	; 40
+     430:	87 e3       	ldi	r24, 0x37	; 55
      432:	80 93 ae 04 	sts	0x04AE, r24
-     436:	80 e3       	ldi	r24, 0x30	; 48
+     436:	86 e4       	ldi	r24, 0x46	; 70
      438:	80 93 bc 03 	sts	0x03BC, r24
      43c:	5e c0       	rjmp	.+188    	; 0x4fa <__vector_18+0x12e>
      43e:	8a 32       	cpi	r24, 0x2A	; 42
@@ -1590,9 +1590,9 @@ Disassembly of section .text:
      eb4:	90 93 ad 04 	sts	0x04AD, r25
      eb8:	9f e0       	ldi	r25, 0x0F	; 15
      eba:	90 93 bf 03 	sts	0x03BF, r25
-     ebe:	94 e1       	ldi	r25, 0x14	; 20
+     ebe:	93 e2       	ldi	r25, 0x23	; 35
      ec0:	90 93 ae 04 	sts	0x04AE, r25
-     ec4:	9c e1       	ldi	r25, 0x1C	; 28
+     ec4:	92 e3       	ldi	r25, 0x32	; 50
      ec6:	90 93 bc 03 	sts	0x03BC, r25
      eca:	80 93 8e 04 	sts	0x048E, r24
      ece:	87 e4       	ldi	r24, 0x47	; 71

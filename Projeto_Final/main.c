@@ -8,10 +8,6 @@
  *	onde envia informação relativa aos sensores, nivel de bateria, se está "perdido" da pista ou não
  *	podemos mudar a velocidade, entre diversas outras informações.
  *	É possivel tambem com a nossa app mudar para o Modo Manual, onde podemos controlar o robo.
- *	Para alem disso, temos um comando IR que podemos dar o START e STOP, como mudar a sua velocidade
- *
- *
- *	Solução:
  *******************************************/
 
 /*Bibliotecas padrao*/
@@ -19,7 +15,6 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
-
 
 /*Ficheiros de bilbiotecas*/
 #include "Lcd.h"
@@ -60,13 +55,11 @@
 #define REVERSE 30 //Marcha atrás
 #define TRAVA 31 //Trava
 
-/* 0-> Parado
- * 255-> Velocidade máxima*/
 /*VELOCIDADES PADRÃO*/
 #define Velocidade_Padrao 200
 #define Mudanca_Suave_Padrao 15
-#define Mudanca_Media_Padrao 20
-#define Mudanca_Media_Mais_Padrao 28
+#define Mudanca_Media_Padrao 35
+#define Mudanca_Media_Mais_Padrao 50
 
 /*TIMERS*/
 #define T1BOTTOM 65536-16000
@@ -86,7 +79,7 @@
 #define RUN 150
 #define STOP 151
 
-/*VARIAVEIS*/
+/********VARIAVEIS********/
 uint8_t Sensor[5];	//Sensor Linha
 volatile uint8_t Velocidade_Default, Mudanca_Suave, Mudanca_Media,
 		Mudanca_Media_mais; //Velocidades para manipular
@@ -108,20 +101,19 @@ uint8_t Flag_Bluetooth; //Envia UM dado a cada X segundos
 uint8_t Flag_Lcd; //Imprime UM dado a cada X segundos
 uint8_t Flag_Bateria_Fraca;
 
-uint8_t Gravacao[Gravacao_Limite];
-uint16_t Gravacao_Tempo[Gravacao_Limite];
-uint8_t Gravacao_Velocidade[Gravacao_Limite];
+uint8_t Gravacao[Gravacao_Limite]; //Vetor guarda movimentos
+uint16_t Gravacao_Tempo[Gravacao_Limite]; //Vetor guarda tempo que este no movimento X
+uint8_t Gravacao_Velocidade[Gravacao_Limite]; //Vetor guarda velocidade
 uint8_t Modo_Gravacao, Modo_Reproducao;
-uint8_t Pre_Valid;
-uint8_t Count, Count2;
+uint8_t Pre_Valid; //Guarda  valor anterior do movimento
+uint8_t Count, Count2; //Apontadores para inicio e fim de vetor
 uint8_t Flag_Gravacao;
 uint8_t Flag_Reproducao;
 
-
 //declare an eeprom array
-unsigned char EEMEM my_eeprom_array[Gravacao_Limite];
+uint8_t EEMEM my_eeprom_array[Gravacao_Limite];
 uint16_t EEMEM Tempo_eeprom[Gravacao_Limite];
-unsigned char EEMEM Velocidade_eeprom[Gravacao_Limite];
+uint8_t EEMEM Velocidade_eeprom[Gravacao_Limite];
 
 /********************************************************************************/
 
@@ -167,14 +159,19 @@ void Send_To_Bluetooth(void);
 /*Envia percentagem bateria via bluetooth*/
 void Send_Battery_Bluetooth(void);
 
+/*Imprime aviso e desliga motor*/
 void Bateria_Fraca(void);
 
+/*Imprime informação do modo competiçao*/
 void Competicao(void);
 
+/*Coloca nos vetores as respetivas informações*/
 void Gravar(uint8_t Mudanca);
 
+/*Coloca na variavel respetiva o valor que está no vetor*/
 void Reproduzir();
 
+/*Coloca nos vetores declarados globalmente os valores que estão na EEPROM*/
 void Init_Reproducao();
 
 /********************************************************************************/
@@ -235,7 +232,6 @@ ISR(USART_RX_vect) {
 
 		} else if (RecByte == 65) {
 			Velocidade_Default = 240;
-
 			Mudanca_Suave = Mudanca_Suave_Padrao + 20;
 			Mudanca_Media = Mudanca_Media_Padrao + 20;
 			Mudanca_Media_mais = Mudanca_Media_Mais_Padrao + 20;
@@ -244,18 +240,18 @@ ISR(USART_RX_vect) {
 	} else if (RecByte == 42) //Modo competição
 		Modo_Robo = MODO_COMPETICAO;
 	/*******Gravação********/
-	else if (RecByte == 43) {
+	else if (RecByte == 43) { //inicia gravaçao
 		Modo_Gravacao = 1;
 		Tempo_Gravacao = 0;
 		Count2 = 0;
 		Flag_Gravacao = 2;
-	} else if (RecByte == 44) {
+	} else if (RecByte == 44) { //acaba gravaçao
 		Modo_Gravacao = 0;
 		Flag_Gravacao = 3;
 		PORTB &= ~(1 << LED_VERMELHO);
-	} else if (RecByte == 45)
+	} else if (RecByte == 45) //inicia reproduçao
 		Modo_Reproducao = 1;
-	else if (RecByte == 46)
+	else if (RecByte == 46) //Acaba reproduçao
 		Modo_Reproducao = 0;
 	/*******************************************/
 	/*CONTROLO MANUAL*/
@@ -307,18 +303,6 @@ int main(void) {
 	stdout = &mystdout;
 	lcd_init();
 
-	/*Inicia variaveis*/
-	Comando = STOP;
-	Modo_Robo = MODO_AUTOMATICO;
-	Flag_Ciclo = 0;
-	Robo_Perdido = 0;
-	Flag_Bluetooth = 1;
-	Flag_Bateria_Fraca = 0;
-	Flag_Lcd = 0;
-	Modo_Gravacao = 0;
-	Modo_Reproducao = 0;
-	Flag_Reproducao = 0;
-
 	init_adc();
 
 	/*TEMPOS*/
@@ -328,9 +312,9 @@ int main(void) {
 
 	while (1) {
 
-		/*********************************************/
-		/*ANDA COM SENSORES*/
-		/**********************************************/
+/*********************************************/
+/*ANDA COM SENSORES, modo automatico*/
+/**********************************************/
 		if (Modo_Robo == MODO_AUTOMATICO) {
 			Controlo_Manual = MODO_AUTOMATICO;
 
@@ -349,7 +333,7 @@ int main(void) {
 				}
 
 				/****Não está na pista*****/
-				else if (Robo_Perdido && !Tempo_Perdido) { //Está perdido | Fica parado
+			else if (Robo_Perdido && !Tempo_Perdido) { //Está perdido | Fica parado
 
 					Flag_Perdido = 0;
 					while (1) {
@@ -395,9 +379,9 @@ int main(void) {
 			}
 
 		}
-		/************************************************************/
-		/*ANDA POR CONTROLO REMOTO*/
-		/**************************************************************/
+/************************************************************/
+/*ANDA POR CONTROLO REMOTO*/
+/**************************************************************/
 		else if (Modo_Robo == MODO_MANUAL) {
 
 			/*Faz 1 vez no inicio*/
@@ -454,9 +438,9 @@ int main(void) {
 			}
 
 		}
-		/************************************************************/
-		/*ANDA COMPETIÇAO*/
-		/**************************************************************/
+/************************************************************/
+/*ANDA COMPETIÇAO*/
+/**************************************************************/
 		else if (Modo_Robo == MODO_COMPETICAO) {
 			Velocidade_Default = 250;
 			Mudanca_Suave = 15;
@@ -489,6 +473,10 @@ int main(void) {
 			}
 		}
 
+
+/************************************************************/
+/*Bateria menor que 20% */
+/**************************************************************/
 		while (Battery_Level <= 2) {
 			Bateria_Fraca();
 
@@ -506,10 +494,11 @@ int main(void) {
 			}
 		}
 
+/************************************************************/
+/*Modo de reprodução*/
+/**************************************************************/
 		if (Modo_Reproducao) {
 			Init_Reproducao();
-
-
 
 			while (1) {
 
@@ -527,8 +516,8 @@ int main(void) {
 				if (!Modo_Reproducao) {
 					Count = 0;
 					Reset_Lcd();
-					Flag_Ciclo=0;
-					Flag_Reproducao=0;
+					Flag_Ciclo = 0;
+					Flag_Reproducao = 0;
 					break;
 				}
 			}
@@ -563,9 +552,7 @@ void Init() {
 	TCNT1 = T1BOTTOM; // Load BOTTOM value
 	TIMSK1 = (1 << TOIE1); // Enable Ovf intrpt
 	TCCR1B = 1; // Start TC1
-	/*1->1
-	 * 2->8
-	 * 3->64*/
+
 	/*enable interrupt.*/
 	sei();
 
@@ -597,7 +584,20 @@ void Init() {
 	Volta = 1;
 	Send_Data(71); // Reset de voltas via bluetooth
 
+	/*Começa parado, modo segurança*/
 	Motores(PARADO);
+
+	/*Inicia variaveis*/
+	Comando = STOP;
+	Modo_Robo = MODO_AUTOMATICO;
+	Flag_Ciclo = 0;
+	Robo_Perdido = 0;
+	Flag_Bluetooth = 1;
+	Flag_Bateria_Fraca = 0;
+	Flag_Lcd = 0;
+	Modo_Gravacao = 0;
+	Modo_Reproducao = 0;
+	Flag_Reproducao = 0;
 }
 
 /* [ OUT1  OUT2  OUT3  OUT4  OUT5 ]
@@ -723,18 +723,20 @@ void Calculo() {
  * OCR2B-> MOTOR DIREITA*/
 void Motores(uint8_t Valid) {
 
-	/********MODO GRAVAÇAO*******/
+	/********MODO GRAVAÇAO*********************************/
 	if ((Pre_Valid != Valid && Modo_Gravacao && !Modo_Reproducao)
 			|| Flag_Gravacao == 2 || Flag_Gravacao == 3) {
 		Gravar(Pre_Valid);
 		Tempo_Gravacao = 0;
-		if(Flag_Gravacao == 3)
-		{
+		if (Flag_Gravacao == 3) {
 			eeprom_update_byte(&my_eeprom_array[0], Count2);
-			for(Count=0; Count<Count2; Count++){
-				eeprom_update_byte(&my_eeprom_array[Count+1], Gravacao[Count]);
-				eeprom_update_word(&Tempo_eeprom[Count+1], Gravacao_Tempo[Count]);
-				eeprom_update_byte(&Velocidade_eeprom[Count+1], Gravacao_Velocidade[Count]);
+			for (Count = 0; Count < Count2; Count++) {
+				eeprom_update_byte(&my_eeprom_array[Count + 1],
+						Gravacao[Count]);
+				eeprom_update_word(&Tempo_eeprom[Count + 1],
+						Gravacao_Tempo[Count]);
+				eeprom_update_byte(&Velocidade_eeprom[Count + 1],
+						Gravacao_Velocidade[Count]);
 
 			}
 
@@ -749,7 +751,7 @@ void Motores(uint8_t Valid) {
 			Timer_Pisca = 1500;
 		}
 	}
-	/*****************************/
+	/*******************************************************/
 	switch (Valid) {
 
 	case OK:
@@ -1195,14 +1197,14 @@ void Reproduzir() {
 
 }
 void Init_Reproducao() {
-	Count2= eeprom_read_byte(&my_eeprom_array[0]);
-	for(Count=0; Count<Count2; Count++ ){
-		Gravacao[Count]= eeprom_read_byte(&my_eeprom_array[Count+1]);
-		Gravacao_Tempo[Count]= eeprom_read_word(&Tempo_eeprom[Count+1]);
-		Gravacao_Velocidade[Count]=  eeprom_read_byte(&Velocidade_eeprom[Count+1]);
+	Count2 = eeprom_read_byte(&my_eeprom_array[0]);
+	for (Count = 0; Count < Count2; Count++) {
+		Gravacao[Count] = eeprom_read_byte(&my_eeprom_array[Count + 1]);
+		Gravacao_Tempo[Count] = eeprom_read_word(&Tempo_eeprom[Count + 1]);
+		Gravacao_Velocidade[Count] = eeprom_read_byte(
+				&Velocidade_eeprom[Count + 1]);
 	}
 	Count = 0;
-
 
 	Tempo_Gravacao_Menos = Gravacao_Tempo[Count];
 	Velocidade_Default = Gravacao_Velocidade[Count];
