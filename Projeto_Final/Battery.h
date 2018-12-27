@@ -8,6 +8,8 @@
 
 #define VREF 5
 
+/*Biblioteca adaptada dos slides sobre ADC para este trabalho*/
+
 
 void init_adc(void) {
  // Definir Vref=AVcc e ADC0
@@ -29,30 +31,7 @@ unsigned int read_adc(unsigned char chan) {
  return ADC;
 }
 
-double Read_Battery(unsigned int adc){
-	double v;
-
-	v= adc*VREF*1000/1024;
-
-	return v;
-
-}
-
-/*Mostra percentagem bateria*/
-void Print_Battery(double v){
-
-	short i;
-
-		for(i=0;i<10; i++)
-		{
-			lcd_gotoxy(i+7, 1);
-			lcdData(0b11111111);
-		}
 
 
-
-}
-
-/*ADC-245*10*/
 
 #endif

@@ -9,8 +9,7 @@
 #define BAUD 9600
 #define UBBR_VAL (F_CPU/8/BAUD-1)
 
-/*Variavel auxiliar para contar o numero de voltas*/
-uint8_t aux;
+
 
 void init_usart(void){
 
@@ -38,53 +37,6 @@ void Send_Data(unsigned char str){
 
 }
 
-/*Envia os respetivos codigos ascii de cada sensor para bluetooth*/
-void Send_Sensores(uint8_t Sensor[5]){
-
-	if(!Sensor[0])
-		Send_Data(1);
-	else
-		Send_Data(11);
-	_delay_ms(30);
-
-	if(!Sensor[1])
-		Send_Data(2);
-	else
-		Send_Data(12);
-	_delay_ms(30);
-
-	if(!Sensor[2])
-		Send_Data(3);
-	else
-		Send_Data(13);
-	_delay_ms(30);
-
-	if(!Sensor[3])
-		Send_Data(4);
-	else
-		Send_Data(14);
-	_delay_ms(30);
-
-	if(!Sensor[4])
-		Send_Data(5);
-	else
-		Send_Data(15);
-	_delay_ms(30);
-
-	/*Tentativa de contar a volta */
-	if( !Sensor[0] && !Sensor[1] && !Sensor[2] && !Sensor[3] && !Sensor[4] )
-		 aux=1;
-	else if((aux==1) && (Sensor[0] || Sensor[4]))
-		aux=2;
-	else if(aux==2 )
-			{
-		Send_Data(70);
-		aux=0;
-		_delay_ms(3);
-			}
-
-return;
-}
 
 
 /*Recebe codigo ascii do bluetooth*/
