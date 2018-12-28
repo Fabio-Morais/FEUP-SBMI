@@ -10,16 +10,8 @@
 
 #define ctrl PORTD
 #define en PB5
-#define rw PD1
 #define rs PB4
 
-/*MODO DE OPERAÇÃO*/
-#define MODO_MANUAL 40
-#define MODO_AUTOMATICO 41
-
-/*ESTADO ROBO*/
-#define RUN 150
-#define STOP 151
 
 void lcd_command(char cmd);
 void lcd_init(void);

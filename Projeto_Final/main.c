@@ -8,6 +8,21 @@
  *	onde envia informação relativa aos sensores, nivel de bateria, se está "perdido" da pista ou não
  *	podemos mudar a velocidade, entre diversas outras informações.
  *	É possivel tambem com a nossa app mudar para o Modo Manual, onde podemos controlar o robo.
+ *
+ *	A main está dividida entre 3 grandes partes, Modo automatico, modo manual e modo competição, dentro
+ *	dessas partes é depois testado varias condiçoes, no caso do modo automatico é testado se o robo está
+ *	perdido ou nao, é calculado os sensores ativos, ativa motores....etc
+ *	É tambem visto em cada ciclo se a bateria tem menos de 20%, caso tenha, então fica num ciclo infinito até que
+ *	o nivel de bateria suba mais de 20%.
+ *	É testado se entramos no modo reprodução ou não.
+ *
+ *	No modo manual apenas é recebida informação via bluetooth e vamos atualizando as variaveis e colocando
+ *	os motores a funcionar.
+ *
+ *	No modo competiçao é desligado do lcd e para de receber informaçoes via bluetooth, colocando mais tensao nos motores.
+ *
+ *
+ *
  *******************************************/
 
 /*Bibliotecas padrao*/
@@ -110,8 +125,8 @@ uint8_t Count, Count2; //Apontadores para inicio e fim de vetor
 uint8_t Flag_Gravacao;
 uint8_t Flag_Reproducao;
 
-//declare an eeprom array
-uint8_t EEMEM my_eeprom_array[Gravacao_Limite];
+/*Vetores declarados em EEPROM*/
+uint8_t EEMEM Movimentos_eeprom[Gravacao_Limite];
 uint16_t EEMEM Tempo_eeprom[Gravacao_Limite];
 uint8_t EEMEM Velocidade_eeprom[Gravacao_Limite];
 
@@ -126,7 +141,7 @@ void Sensores();
 /*Faz movimento dos motores de acordo com o estado dos sensores*/
 void Calculo();
 
-/*Envia para os motores os valores que a função Calculo fez*/
+/*Muda OCR2n dos motores com os valores que a função Calculo fez*/
 void Motores(uint8_t Valid);
 
 /*Imprime lcd | Acende luz azul*/
@@ -211,6 +226,7 @@ ISR(USART_RX_vect) {
 
 	/*******************************************/
 	/*CONTROLO AUTOMATICO*/
+	/*******************************************/
 
 	/*START AND STOP*/
 	if (RecByte == 151 || RecByte == 150)
@@ -255,6 +271,8 @@ ISR(USART_RX_vect) {
 		Modo_Reproducao = 0;
 	/*******************************************/
 	/*CONTROLO MANUAL*/
+	/*******************************************/
+
 	else if ((RecByte >= 1) && (RecByte <= 4)) {
 		if (RecByte == 1) //RECEBE DIREITA
 			Controlo_Manual = DIREITA_BRUTA;
@@ -296,19 +314,14 @@ ISR(USART_RX_vect) {
 int main(void) {
 
 	Init();
+	_delay_ms(500);
 
-	_delay_ms(500); // Para chegar a tensao estavel
 	init_usart();
 
 	stdout = &mystdout;
 	lcd_init();
 
 	init_adc();
-
-	/*TEMPOS*/
-	Tempo_Send_Sensores = Lcd_Time;
-	Tempo_Bluetooth = 0;
-	Tempo_Bateria = Battery_Time;
 
 	while (1) {
 
@@ -598,6 +611,13 @@ void Init() {
 	Modo_Gravacao = 0;
 	Modo_Reproducao = 0;
 	Flag_Reproducao = 0;
+
+
+	/*TEMPOS*/
+	Tempo_Send_Sensores = 0;
+	Tempo_Bluetooth = 0;
+	Tempo_Bateria = 0;
+
 }
 
 /* [ OUT1  OUT2  OUT3  OUT4  OUT5 ]
@@ -729,9 +749,9 @@ void Motores(uint8_t Valid) {
 		Gravar(Pre_Valid);
 		Tempo_Gravacao = 0;
 		if (Flag_Gravacao == 3) {
-			eeprom_update_byte(&my_eeprom_array[0], Count2);
+			eeprom_update_byte(&Movimentos_eeprom[0], Count2);
 			for (Count = 0; Count < Count2; Count++) {
-				eeprom_update_byte(&my_eeprom_array[Count + 1],
+				eeprom_update_byte(&Movimentos_eeprom[Count + 1],
 						Gravacao[Count]);
 				eeprom_update_word(&Tempo_eeprom[Count + 1],
 						Gravacao_Tempo[Count]);
@@ -1197,9 +1217,9 @@ void Reproduzir() {
 
 }
 void Init_Reproducao() {
-	Count2 = eeprom_read_byte(&my_eeprom_array[0]);
+	Count2 = eeprom_read_byte(&Movimentos_eeprom[0]);
 	for (Count = 0; Count < Count2; Count++) {
-		Gravacao[Count] = eeprom_read_byte(&my_eeprom_array[Count + 1]);
+		Gravacao[Count] = eeprom_read_byte(&Movimentos_eeprom[Count + 1]);
 		Gravacao_Tempo[Count] = eeprom_read_word(&Tempo_eeprom[Count + 1]);
 		Gravacao_Velocidade[Count] = eeprom_read_byte(
 				&Velocidade_eeprom[Count + 1]);
